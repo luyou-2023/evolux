@@ -7,9 +7,11 @@ import sys
 
 from cli.assistant import add_assistant_parser, run_assistant
 from cli.chat import run_chat
+from cli.cron_cmd import add_cron_parser, run_cron
 from cli.dashboard_cmd import run_dashboard_start
 from cli.gateway_cmd import run_gateway_start
 from cli.setup import run_setup
+from cli.skills_cmd import add_skills_parser, run_skills
 from cli.tui import run_tui
 
 
@@ -24,6 +26,9 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("--assistant", default="default", help="Assistant id")
 
     sub.add_parser("tui", help="Terminal status UI")
+
+    add_skills_parser(sub)
+    add_cron_parser(sub)
 
     dashboard = sub.add_parser("dashboard", help="Web dashboard commands")
     dashboard_sub = dashboard.add_subparsers(dest="dashboard_command")
@@ -45,7 +50,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "version":
-        print("evolux 0.3.0")
+        print("evolux 0.4.0")
         return 0
 
     if args.command == "setup":
@@ -56,6 +61,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "tui":
         return run_tui()
+
+    if args.command == "skills":
+        if not args.skills_command:
+            parser.parse_args(["skills", "--help"])
+            return 0
+        return run_skills(args)
+
+    if args.command == "cron":
+        if not args.cron_command:
+            parser.parse_args(["cron", "--help"])
+            return 0
+        return run_cron(args)
 
     if args.command == "dashboard":
         if args.dashboard_command == "start":

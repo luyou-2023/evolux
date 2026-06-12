@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from agent.routing import FusionWeights
 from evolux_constants import get_evolux_home
 
 
@@ -17,6 +18,7 @@ class AssistantConfig:
     name: str
     platforms: dict[str, dict[str, Any]] = field(default_factory=dict)
     skills_allowlist: list[str] = field(default_factory=list)
+    routing_fusion: FusionWeights | None = None
 
 
 class AssistantRegistry:
@@ -51,11 +53,21 @@ class AssistantRegistry:
         for assistant_id, cfg in assistants.items():
             if not isinstance(cfg, dict):
                 continue
+            routing = cfg.get("routing") or {}
+            fusion_raw = routing.get("fusion") or {}
+            routing_fusion = None
+            if fusion_raw:
+                routing_fusion = FusionWeights(
+                    vector_weight=float(fusion_raw.get("vector_weight", 0.5)),
+                    skill_overlap_weight=float(fusion_raw.get("skill_overlap_weight", 0.4)),
+                    recency_weight=float(fusion_raw.get("recency_weight", 0.1)),
+                )
             self._assistants[assistant_id] = AssistantConfig(
                 assistant_id=assistant_id,
                 name=str(cfg.get("name", assistant_id)),
                 platforms=dict(cfg.get("platforms") or {}),
                 skills_allowlist=list(cfg.get("skills_allowlist") or []),
+                routing_fusion=routing_fusion,
             )
 
     def get(self, assistant_id: str) -> AssistantConfig | None:

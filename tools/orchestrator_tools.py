@@ -67,6 +67,17 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
         )
         return json.dumps(result, ensure_ascii=False)
 
+    if name == "retire_subagent":
+        agent_id = arguments.get("agent_id", "")
+        agent = ctx.agent_registry.get(agent_id, include_retired=True)
+        if agent is None:
+            return json.dumps({"error": f"unknown agent: {agent_id}"}, ensure_ascii=False)
+        ctx.agent_registry.retire(agent_id)
+        retired = ctx.agent_registry.get(agent_id, include_retired=True)
+        if retired:
+            ctx.subagent_index.sync_agent(retired)
+        return json.dumps({"retired": agent_id}, ensure_ascii=False)
+
     return json.dumps({"error": f"unknown tool: {name}"})
 
 

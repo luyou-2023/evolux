@@ -45,6 +45,17 @@ class MCPSettings:
 
 
 @dataclass
+class VectorSettings:
+    backend: str = "json"
+    embedding: str = "hash"
+
+
+@dataclass
+class CronSettings:
+    jobs: list[dict] = field(default_factory=list)
+
+
+@dataclass
 class Settings:
     orchestrator_max_iterations: int = 30
     subagent_max_iterations: int = 90
@@ -53,6 +64,8 @@ class Settings:
     llm: LLMSettings = field(default_factory=LLMSettings)
     gateway: GatewaySettings = field(default_factory=GatewaySettings)
     mcp: MCPSettings = field(default_factory=MCPSettings)
+    vector: VectorSettings = field(default_factory=VectorSettings)
+    cron: CronSettings = field(default_factory=CronSettings)
 
 
 def load_settings(home: Path | None = None) -> Settings:
@@ -116,5 +129,17 @@ def load_settings(home: Path | None = None) -> Settings:
     mcp = raw.get("mcp_servers", {})
     if isinstance(mcp, dict):
         settings.mcp.servers = {str(k): dict(v or {}) for k, v in mcp.items()}
+
+    vector = raw.get("vector", {})
+    if isinstance(vector, dict):
+        settings.vector = VectorSettings(
+            backend=str(vector.get("backend", settings.vector.backend)),
+            embedding=str(vector.get("embedding", settings.vector.embedding)),
+        )
+
+    cron = raw.get("cron", {})
+    if isinstance(cron, dict):
+        jobs = cron.get("jobs") or []
+        settings.cron = CronSettings(jobs=list(jobs) if isinstance(jobs, list) else [])
 
     return settings

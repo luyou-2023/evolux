@@ -8,15 +8,18 @@ from typing import Any, Callable
 
 from agent.agent_registry import AgentDefinition, AgentRegistry
 from agent.context_compressor import CompressionConfig, compress_messages
+from agent.mcp_tooling import MCPToolRouter
 from agent.memory_manager import MemoryManager
 from agent.orchestrator import OrchestratorAgent
-from agent.routing import RoutingContext, SubAgentCandidate, fuse_routing
+from agent.routing import FusionWeights, RoutingContext, SubAgentCandidate, fuse_routing
 from agent.settings import Settings, load_settings
 from agent.skill_router import SkillRouter
 from agent.subagent import SubAgent
 from evolux_constants import get_evolux_home
 from evolux_state import SessionDB
 from agent.tooling import build_combined_tool_executor
+from gateway.assistant_registry import AssistantRegistry
+from mcp.manager import MCPManager
 from tools.orchestrator_tools import OrchestratorToolContext
 from vector.subagent_index import SubAgentIndex
 
@@ -40,6 +43,9 @@ class EvoluxAgent:
         self.skill_router = SkillRouter(home=self.home)
         self.subagent_index = SubAgentIndex(self.home, registry=self.agent_registry)
         self.memory_manager = MemoryManager(home=self.home, assistant_id=assistant_id)
+        self.mcp_manager = MCPManager(home=self.home, settings=self.settings)
+        self.mcp_router = MCPToolRouter(self.mcp_manager)
+        self.assistant_registry = AssistantRegistry(home=self.home)
 
         self._tool_context = OrchestratorToolContext(
             assistant_id=assistant_id,
@@ -50,7 +56,10 @@ class EvoluxAgent:
             create_subagent_runner=self.create_subagent,
             dispatch_subagent=self.dispatch_subagent,
         )
-        combined_tool_executor = tool_executor or build_combined_tool_executor(self._tool_context)
+        combined_tool_executor = tool_executor or build_combined_tool_executor(
+            self._tool_context,
+            mcp_router=self.mcp_router,
+        )
 
         self.orchestrator = OrchestratorAgent(
             llm_call=llm_call,
@@ -85,7 +94,13 @@ class EvoluxAgent:
                     recency_boost=recency_boost,
                 )
             )
-        return fuse_routing(skill_candidates, subagent_candidates, self.settings.routing.fusion)
+        return fuse_routing(skill_candidates, subagent_candidates, self._fusion_weights())
+
+    def _fusion_weights(self) -> FusionWeights:
+        assistant = self.assistant_registry.get(self.assistant_id)
+        if assistant and assistant.routing_fusion:
+            return assistant.routing_fusion
+        return self.settings.routing.fusion
 
     def _build_prefix_messages(
         self,
@@ -182,6 +197,7 @@ class EvoluxAgent:
         )
 
     def close(self) -> None:
+        self.mcp_manager.close()
         self.session_db.close()
 
 

@@ -11,7 +11,10 @@ pip install -e ".[dev,gateway]"
 evolux setup
 # put DEEPSEEK_API_KEY in ~/.evolux/.env
 
-evolux chat                      # local orchestrator REPL
+evolux skills install git       # install bundled skill
+evolux skills reindex           # rebuild skill vector index
+evolux cron list                # show scheduled jobs
+evolux cron start               # run cron scheduler
 evolux tui                       # terminal status UI
 evolux dashboard start           # web dashboard :8787/dashboard
 evolux gateway start             # Feishu webhook + dashboard
@@ -44,6 +47,7 @@ Client (CLI / Feishu / …)
 | Phase 3 Gateway + multi-assistant | Done |
 | Phase 3.1 Webhook HTTP server | Done |
 | Phase 4 MCP / Cron / Dashboard / Feishu reply | Done |
+| Phase 5 Skills / MCP tools / Cron jobs | Done |
 
 ## CLI
 
@@ -51,6 +55,8 @@ Client (CLI / Feishu / …)
 |---------|-------------|
 | `evolux setup` | Init `~/.evolux` config and dirs |
 | `evolux chat` | Interactive orchestrator session |
+| `evolux skills list/install/reindex` | Manage Skill definitions |
+| `evolux cron list/start` | Scheduled orchestrator jobs |
 | `evolux tui` | Terminal assistant/session browser |
 | `evolux dashboard start` | Web dashboard (assistants + sessions) |
 | `evolux assistant list` | List assistants |
@@ -74,10 +80,13 @@ When `app_id` and `app_secret` are configured, Evolux automatically sends the or
 - `subagent.max_iterations` — default 90
 - `llm.provider` / `llm.model` — default DeepSeek
 - `gateway.host` / `gateway.port` — default `0.0.0.0:8787`
-- `mcp_servers` — MCP stdio servers (lazy discovery)
+- `mcp_servers` — MCP stdio servers (lazy discovery, tools prefixed `mcp_*`)
+- `cron.jobs` — scheduled orchestrator prompts
+- `vector.embedding` — `hash` (default) or `openai`
+- `assistants.<id>.routing.fusion` — per-assistant fusion weights
 
 Secrets: `~/.evolux/.env` (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`)
 
 ## Tests
 
-75+ pytest cases — TDD workflow, CI on push. Live DeepSeek tests: `pytest -m live`.
+81 pytest cases — TDD workflow, CI on push. Live DeepSeek tests: `pytest -m live`.

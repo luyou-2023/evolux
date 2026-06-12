@@ -122,6 +122,40 @@ def build_clarify_selected_card(*, question: str, option: str) -> dict[str, Any]
     }
 
 
+def build_feishu_commands_card() -> dict[str, Any]:
+    """Interactive card listing Hermes-compatible slash commands for Feishu users."""
+    command_lines = [
+        ("会话", ["/new", "/stop", "/status", "/sessions", "/title", "/history", "/compress", "/retry", "/undo"]),
+        ("信息", ["/help", "/commands", "/model", "/tools", "/skills browse"]),
+    ]
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": "在聊天中发送以下 **slash 命令**，由 Session Monitor 即时处理（无需等待 Agent 回复）。",
+            },
+        },
+        {"tag": "hr"},
+    ]
+    for section, commands in command_lines:
+        lines = "\n".join(f"`{cmd}`" for cmd in commands)
+        elements.append(
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": f"**{section}**\n{lines}"},
+            }
+        )
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "turquoise",
+            "title": {"tag": "plain_text", "content": "Evolux 命令参考"},
+        },
+        "elements": elements,
+    }
+
+
 def build_feishu_post_reply(chat_id: str, *, answer: str, trace: TurnTrace | None = None) -> dict[str, Any]:
     return {
         "receive_id": chat_id,

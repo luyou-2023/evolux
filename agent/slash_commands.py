@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from pathlib import Path
+from typing import Any, Callable
 
 from agent.context_compressor import CompressionConfig, compress_messages
 from agent.settings import Settings
@@ -15,7 +16,6 @@ MONITOR_PREFIX = "📋 监控"
 SLASH_ALIASES: dict[str, str] = {
     "reset": "new",
     "clear": "new",
-    "commands": "help",
 }
 
 
@@ -27,6 +27,7 @@ class SlashCommandContext:
     session_db: SessionDB
     on_progress: Callable[[str], None] | None = None
     settings: Settings | None = None
+    home: Path | None = None
 
 
 @dataclass
@@ -35,6 +36,7 @@ class SlashCommandOutcome:
     reply: str | None = None
     rerun_message: str | None = None
     plain_reply: bool = True
+    interactive_card: dict[str, Any] | None = None
 
 
 def parse_slash_command(text: str) -> tuple[str, str] | None:
@@ -92,10 +94,13 @@ def _cmd_help(_ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
     lines = [
         f"{MONITOR_PREFIX} · 可用命令（Hermes 兼容子集）：",
         "/help — 显示此帮助",
+        "/commands — 命令参考（飞书发送交互卡片）",
         "/new, /reset, /clear — 重置当前会话",
+        "/title [名称] — 查看或设置会话标题",
         "/stop — 中断正在运行的 Agent 轮次",
         "/status — 显示会话与模型信息",
         "/sessions — 列出最近会话",
+        "/skills browse — 浏览已安装 Skills",
         "/history [n] — 显示最近消息（默认 6 条）",
         "/compress [focus] — 手动压缩会话上下文",
         "/model — 显示当前 LLM 模型",
@@ -129,13 +134,20 @@ def _cmd_status(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
             reply=f"{MONITOR_PREFIX} · 尚无会话记录。",
         )
     count = ctx.session_db.count_messages(session_id)
+    title = ctx.session_db.get_session_title(ctx.session_key)
     lines = [
         f"{MONITOR_PREFIX} · 会话状态",
         f"Session: {ctx.session_key}",
-        f"Assistant: {ctx.assistant_id}",
-        f"Platform: {ctx.platform}",
-        f"Messages: {count}",
     ]
+    if title:
+        lines.append(f"Title: {title}")
+    lines.extend(
+        [
+            f"Assistant: {ctx.assistant_id}",
+            f"Platform: {ctx.platform}",
+            f"Messages: {count}",
+        ]
+    )
     if ctx.settings is not None:
         lines.append(f"Model: {ctx.settings.llm.provider}/{ctx.settings.llm.model}")
         lines.append(f"Tools: {len(_tool_names(ctx.platform))}")
@@ -152,7 +164,9 @@ def _cmd_sessions(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
         marker = " ← 当前" if key == ctx.session_key else ""
         count = item.get("message_count", 0)
         platform = item.get("platform", "")
-        lines.append(f"• {key} ({platform}, {count} msgs){marker}")
+        title = str(item.get("title") or "").strip()
+        label = f"{title} · " if title else ""
+        lines.append(f"• {label}{key} ({platform}, {count} msgs){marker}")
     return SlashCommandOutcome(handled=True, reply="\n".join(lines))
 
 
@@ -213,6 +227,71 @@ def _cmd_compress(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
     return SlashCommandOutcome(handled=True, reply=message)
 
 
+def _cmd_title(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    session_id = ctx.session_db.get_session_id_by_key(ctx.session_key)
+    if not session_id:
+        ctx.session_db.get_or_create_session(ctx.session_key, ctx.assistant_id, ctx.platform)
+    title = args.strip()
+    if not title:
+        current = ctx.session_db.get_session_title(ctx.session_key)
+        if not current:
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 当前会话尚未命名。用法：/title 我的项目",
+            )
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 当前会话标题：**{current}**",
+        )
+    ctx.session_db.set_session_title(ctx.session_key, title[:120])
+    message = f"{MONITOR_PREFIX} · 会话标题已设为：**{title[:120]}**"
+    _notify(ctx, message)
+    return SlashCommandOutcome(handled=True, reply=message)
+
+
+def _cmd_skills(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    subcommand = (args.split()[0].lower() if args.strip() else "browse")
+    if subcommand not in {"browse", "list"}:
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 用法：/skills browse",
+        )
+    if ctx.home is None:
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · Skills 目录不可用。",
+        )
+    from agent.skill_router import SkillRouter
+
+    backend = ctx.settings.vector.backend if ctx.settings else "sqlite-vec"
+    router = SkillRouter(ctx.home, backend=backend)
+    skills = router.scan_skills()
+    if not skills:
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 尚未安装 Skills（~/.evolux/skills）。",
+        )
+    lines = [f"{MONITOR_PREFIX} · 已安装 Skills（{len(skills)}）："]
+    for skill in skills[:20]:
+        desc = (skill.description or "").replace("\n", " ")[:80]
+        lines.append(f"• **{skill.skill_name}** — {desc or '无描述'}")
+    if len(skills) > 20:
+        lines.append(f"… 另有 {len(skills) - 20} 个未显示")
+    return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+
+def _cmd_commands(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
+    if ctx.platform == "feishu":
+        from gateway.platforms.feishu_format import build_feishu_commands_card
+
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 命令参考见下方卡片。",
+            interactive_card=build_feishu_commands_card(),
+        )
+    return _cmd_help(ctx, "")
+
+
 def _cmd_model(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
     if ctx.settings is None:
         return SlashCommandOutcome(
@@ -265,10 +344,13 @@ def _cmd_undo(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
 
 _HANDLERS = {
     "help": _cmd_help,
+    "commands": _cmd_commands,
     "new": _cmd_new,
     "stop": _cmd_stop,
     "status": _cmd_status,
     "sessions": _cmd_sessions,
+    "title": _cmd_title,
+    "skills": _cmd_skills,
     "history": _cmd_history,
     "compress": _cmd_compress,
     "model": _cmd_model,

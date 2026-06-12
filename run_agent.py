@@ -209,6 +209,7 @@ class EvoluxAgent:
                 session_db=self.session_db,
                 on_progress=self._progress_callback,
                 settings=self.settings,
+                home=self.home,
             ),
         )
         if slash and slash.handled:
@@ -226,6 +227,7 @@ class EvoluxAgent:
                     messages=[],
                     iterations_used=0,
                     plain_reply=slash.plain_reply,
+                    interactive_card=slash.interactive_card,
                 )
             user_message = slash.rerun_message
 

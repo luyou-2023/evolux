@@ -26,6 +26,7 @@ class ConversationResult:
     iterations_used: int
     exhausted: bool = False
     plain_reply: bool = False
+    interactive_card: dict | None = None
 
 
 def run_conversation_loop(

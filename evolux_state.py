@@ -9,7 +9,7 @@ from typing import Any
 
 from evolux_constants import get_evolux_home
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SessionDB:
@@ -51,7 +51,23 @@ class SessionDB:
             "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
         )
+        self._migrate_schema()
         self._conn.commit()
+
+    def _migrate_schema(self) -> None:
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(sessions)").fetchall()
+        }
+        if "title" not in columns:
+            self._conn.execute("ALTER TABLE sessions ADD COLUMN title TEXT DEFAULT ''")
+        current = self._conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()
+        if current and int(current["value"]) < SCHEMA_VERSION:
+            self._conn.execute(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                (str(SCHEMA_VERSION),),
+            )
 
     def create_session(
         self,
@@ -77,6 +93,31 @@ class SessionDB:
             (session_key,),
         ).fetchone()
         return row["session_id"] if row else None
+
+    def get_session_row(self, session_key: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT session_id, session_key, assistant_id, platform, title, created_at "
+            "FROM sessions WHERE session_key = ?",
+            (session_key,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def set_session_title(self, session_key: str, title: str) -> bool:
+        row = self.get_session_row(session_key)
+        if row is None:
+            return False
+        self._conn.execute(
+            "UPDATE sessions SET title = ? WHERE session_key = ?",
+            (title.strip(), session_key),
+        )
+        self._conn.commit()
+        return True
+
+    def get_session_title(self, session_key: str) -> str:
+        row = self.get_session_row(session_key)
+        if row is None:
+            return ""
+        return str(row.get("title") or "").strip()
 
     def get_or_create_session(
         self,
@@ -167,7 +208,7 @@ class SessionDB:
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         query = """
-            SELECT session_id, session_key, assistant_id, platform, created_at,
+            SELECT session_id, session_key, assistant_id, platform, title, created_at,
                    (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.session_id) AS message_count
             FROM sessions s
         """

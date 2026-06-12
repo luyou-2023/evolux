@@ -35,6 +35,7 @@ class GatewayResponse:
     reply_error: str | None = None
     trace: TurnTrace | None = None
     plain_reply: bool = False
+    interactive_card: dict | None = None
 
 
 class GatewayRunner:
@@ -116,18 +117,34 @@ class GatewayRunner:
             exhausted=result.exhausted,
             trace=trace,
             plain_reply=getattr(result, "plain_reply", False),
+            interactive_card=getattr(result, "interactive_card", None),
         )
         if (
             self.send_feishu_reply
             and event.source.platform == "feishu"
-            and response.content
             and event.source.chat_id
         ):
-            if response.plain_reply:
-                self._send_feishu_text(event, response)
-            else:
-                self._try_send_feishu_reply(event, response)
+            if response.interactive_card:
+                self._send_feishu_interactive(event, response)
+            elif response.content:
+                if response.plain_reply:
+                    self._send_feishu_text(event, response)
+                else:
+                    self._try_send_feishu_reply(event, response)
         return response
+
+    def _send_feishu_interactive(self, event: MessageEvent, response: GatewayResponse) -> None:
+        client = self._get_feishu_client(event.assistant_id)
+        if not client or not response.interactive_card:
+            return
+        try:
+            client.send_interactive(event.source.chat_id, response.interactive_card)
+            response.reply_sent = True
+            if response.content and response.plain_reply:
+                client.send_text(event.source.chat_id, response.content)
+        except Exception as exc:
+            response.reply_error = str(exc)
+            logger.warning("Feishu interactive reply failed assistant=%s: %s", event.assistant_id, exc)
 
     def _send_feishu_text(self, event: MessageEvent, response: GatewayResponse) -> None:
         client = self._get_feishu_client(event.assistant_id)

@@ -20,7 +20,7 @@ def test_llm_call_adapter_exposes_tool_calls():
     call = llm_call_adapter(client)
     result = call([{"role": "user", "content": "run echo"}])
     assert result.content is None
-    assert result.tool_calls[0]["name"] == "echo"
+    assert result.tool_calls[0]["function"]["name"] == "echo"
 
 
 def test_create_llm_client_uses_mock_without_api_key(monkeypatch):

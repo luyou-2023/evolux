@@ -48,9 +48,11 @@ class MockLLMClient:
     default_content: str = "Mock LLM response."
     responses: list[LLMResponse] = field(default_factory=list)
     calls: list[list[dict[str, Any]]] = field(default_factory=list, repr=False)
+    last_tools: list[dict[str, Any]] | None = field(default=None, repr=False)
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> LLMResponse:
         self.calls.append(list(messages))
+        self.last_tools = tools
         if self.responses:
             return self.responses.pop(0)
         return LLMResponse(content=self.default_content)
@@ -217,17 +219,27 @@ def llm_call_adapter(
             self.tool_calls = [
                 {
                     "id": call.id,
-                    "name": call.name,
-                    "arguments": call.arguments,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(call.arguments, ensure_ascii=False)
+                        if isinstance(call.arguments, dict)
+                        else str(call.arguments or "{}"),
+                    },
                 }
                 for call in response.tool_calls
             ]
 
-    def _call(messages: list[dict[str, Any]], *, on_text_delta: Callable[[str], None] | None = None):
+    def _call(
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        on_text_delta: Callable[[str], None] | None = None,
+    ):
         if on_text_delta and isinstance(client, OpenAICompatibleClient):
-            response = client.stream_complete(messages, on_delta=on_text_delta)
+            response = client.stream_complete(messages, tools=tools, on_delta=on_text_delta)
         else:
-            response = client.complete(messages)
+            response = client.complete(messages, tools=tools)
         return _AdapterResponse(response)
 
     return _call

@@ -28,6 +28,7 @@ class OrchestratorAgent:
         prefix_messages: list[dict[str, Any]] | None = None,
         tool_hook=None,
         text_hook=None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> ConversationResult:
         combined = list(prefix_messages or []) + list(messages)
         return run_conversation_loop(
@@ -37,4 +38,5 @@ class OrchestratorAgent:
             max_iterations=self.max_iterations,
             tool_hook=tool_hook,
             text_hook=text_hook,
+            tools=tools,
         )

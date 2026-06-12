@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
+from agent.tool_calls import parse_tool_call
 from agent.tool_hooks import ToolCallHook, wrap_tool_executor
 
 
@@ -32,6 +33,7 @@ def run_conversation_loop(
     on_exhausted: Callable[[list[dict[str, Any]]], str] | None = None,
     tool_hook: ToolCallHook | None = None,
     text_hook: Callable[[str], None] | None = None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> ConversationResult:
     """Run the agent loop until a text response or iteration budget is hit."""
     from agent.iteration_budget import IterationBudget
@@ -45,13 +47,19 @@ def run_conversation_loop(
         if not budget.consume():
             break
         iterations_used += 1
+        llm_kwargs: dict[str, Any] = {}
+        if tools:
+            llm_kwargs["tools"] = tools
         if text_hook:
+            llm_kwargs["on_text_delta"] = text_hook
+        try:
+            response = llm_call(history, **llm_kwargs)
+        except TypeError:
+            llm_kwargs.pop("on_text_delta", None)
             try:
-                response = llm_call(history, on_text_delta=text_hook)
+                response = llm_call(history, **llm_kwargs)
             except TypeError:
                 response = llm_call(history)
-        else:
-            response = llm_call(history)
 
         tool_calls = getattr(response, "tool_calls", None) or []
         content = getattr(response, "content", None)
@@ -60,11 +68,11 @@ def run_conversation_loop(
             if executor is None:
                 history.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
                 for call in tool_calls:
+                    name, _ = parse_tool_call(call)
                     history.append(
                         {
                             "role": "tool",
                             "tool_call_id": call.get("id", ""),
-                            "name": call.get("name", ""),
                             "content": "error: no tool executor configured",
                         }
                     )
@@ -72,12 +80,12 @@ def run_conversation_loop(
 
             history.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
             for call in tool_calls:
-                result = executor(call)
+                name, arguments = parse_tool_call(call)
+                result = executor({"id": call.get("id", ""), "name": name, "arguments": arguments})
                 history.append(
                     {
                         "role": "tool",
                         "tool_call_id": call.get("id", ""),
-                        "name": call.get("name", ""),
                         "content": result,
                     }
                 )

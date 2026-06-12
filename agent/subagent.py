@@ -19,6 +19,7 @@ class SubAgent:
         system_prompt: str = "",
         skill_instructions: str = "",
         tool_executor: Callable[[dict[str, Any]], str] | None = None,
+        tool_definitions: list[dict[str, Any]] | None = None,
     ):
         self.agent_id = agent_id
         self.llm_call = llm_call
@@ -26,8 +27,16 @@ class SubAgent:
         self.system_prompt = system_prompt
         self.skill_instructions = skill_instructions
         self.tool_executor = tool_executor
+        self.tool_definitions = tool_definitions or []
 
-    def run_task(self, task: str, context_slice: str = "", skill_instructions: str = "") -> ConversationResult:
+    def run_task(
+        self,
+        task: str,
+        context_slice: str = "",
+        skill_instructions: str = "",
+        *,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ConversationResult:
         messages: list[dict[str, Any]] = []
         system_parts = [self.system_prompt, self.skill_instructions, skill_instructions]
         system_content = "\n\n".join(part for part in system_parts if part).strip()
@@ -40,4 +49,5 @@ class SubAgent:
             llm_call=self.llm_call,
             tool_executor=self.tool_executor,
             max_iterations=self.max_iterations,
+            tools=tools or self.tool_definitions,
         )

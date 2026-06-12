@@ -17,7 +17,7 @@ from agent.subagent import SubAgent
 from evolux_constants import get_evolux_home
 from evolux_state import SessionDB
 from agent.llm import resolve_api_key
-from agent.tooling import build_combined_tool_executor
+from agent.tooling import build_combined_tool_executor, get_agent_tool_definitions, get_subagent_tool_definitions
 from gateway.assistant_registry import AssistantRegistry
 from mcp.manager import MCPManager
 from tools.orchestrator_tools import OrchestratorToolContext
@@ -157,12 +157,14 @@ class EvoluxAgent:
         routing = self.prepare_routing(user_message)
         prefix = self._build_prefix_messages(routing)
         turn_messages = history + [{"role": "user", "content": user_message}]
+        tools = get_agent_tool_definitions(platform=platform)
 
         result = self.orchestrator.run_turn(
             turn_messages,
             prefix_messages=prefix,
             tool_hook=tool_hook,
             text_hook=text_hook,
+            tools=tools,
         )
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)
@@ -183,6 +185,15 @@ class EvoluxAgent:
 
         skill_names = skills or agent_def.skills
         skill_instructions = self.skill_router.load_for_execution(skill_names)
+        subagent_tools = get_subagent_tool_definitions(
+            toolsets=agent_def.toolsets or ["evolux-code"],
+            mcp_servers=list(agent_def.mcp_servers or []),
+        )
+        if agent_def.mcp_servers:
+            for server in agent_def.mcp_servers:
+                from mcp.registry_bridge import sync_mcp_tools
+
+                sync_mcp_tools(self.mcp_manager, server)
         subagent = SubAgent(
             agent_id=agent_id,
             llm_call=self.orchestrator.llm_call,
@@ -194,6 +205,7 @@ class EvoluxAgent:
                 assistant_id=self.assistant_id,
                 subagent=True,
             ),
+            tool_definitions=subagent_tools,
         )
         result = subagent.run_task(task, context_slice=context_slice)
         _touch_agent_usage(self.agent_registry, agent_def)

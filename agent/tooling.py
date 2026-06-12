@@ -8,7 +8,7 @@ from typing import Any, Callable
 from model_tools import handle_function_call
 from toolsets import DELEGATE_BLOCKED_TOOLS
 from tools.discover import ensure_tools_loaded
-from tools.orchestrator_tools import OrchestratorToolContext, build_tool_executor, get_orchestrator_schemas
+from tools.orchestrator_tools import OrchestratorToolContext, build_tool_executor
 
 ORCHESTRATOR_TOOL_NAMES = frozenset(
     {
@@ -52,10 +52,15 @@ def get_agent_tool_definitions(*, platform: str = "cli", enabled_toolsets: list[
     from model_tools import get_tool_definitions
 
     ensure_tools_loaded()
-    definitions = get_tool_definitions(platform=platform, enabled_toolsets=enabled_toolsets)
-    known = {item["function"]["name"] for item in definitions if item.get("function")}
-    for schema in get_orchestrator_schemas():
-        name = schema["function"]["name"]
-        if name not in known:
-            definitions.append(schema)
-    return definitions
+    return get_tool_definitions(platform=platform, enabled_toolsets=enabled_toolsets, include_mcp=True)
+
+
+def get_subagent_tool_definitions(
+    *,
+    toolsets: list[str] | None = None,
+    mcp_servers: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    from model_tools import get_subagent_tool_definitions as _resolve
+
+    ensure_tools_loaded()
+    return _resolve(toolsets=toolsets, mcp_servers=mcp_servers)

@@ -73,6 +73,14 @@ class ToolRegistry:
     def list_schemas(self) -> list[dict[str, Any]]:
         return [entry.schema for entry in self._tools.values()]
 
+    def list_names(self, *, toolset_prefix: str | None = None) -> list[str]:
+        names: list[str] = []
+        for entry in self._tools.values():
+            if toolset_prefix and not entry.toolset.startswith(toolset_prefix):
+                continue
+            names.append(entry.name)
+        return sorted(names)
+
     def get_definitions(self, tool_names: set[str]) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for name in sorted(tool_names):

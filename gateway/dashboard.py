@@ -39,6 +39,11 @@ def _page(title: str, body: str) -> str:
     .badge {{ display: inline-block; background: #eff6ff; color: #1d4ed8; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem; }}
     .msg {{ border-left: 3px solid #dbeafe; padding: 0.5rem 0.75rem; margin: 0.5rem 0; background: #f8fafc; }}
     .role {{ font-weight: 600; color: #374151; }}
+    .feed {{ max-height: 70vh; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 0.5rem; background: #fafafa; }}
+    .event {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; padding: 0.45rem 0.6rem; border-bottom: 1px solid #eee; }}
+    .event-kind {{ color: #7c3aed; font-weight: 600; }}
+    .event-meta {{ color: #6b7280; font-size: 0.8rem; }}
+    .status {{ color: #059669; font-size: 0.9rem; margin-bottom: 0.75rem; }}
   </style>
 </head>
 <body>
@@ -46,6 +51,7 @@ def _page(title: str, body: str) -> str:
     <a href="/dashboard">Overview</a>
     <a href="/dashboard/assistants">Assistants</a>
     <a href="/dashboard/sessions">Sessions</a>
+    <a href="/dashboard/activity">Activity</a>
     <a href="/health">Health</a>
   </div>
   {body}
@@ -126,6 +132,42 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
         """
         return web.Response(text=_page("Session", body), content_type="text/html")
 
+    async def activity(_request: web.Request) -> web.Response:
+        body = """
+        <h1>Live Activity</h1>
+        <p class="status" id="status">Connecting…</p>
+        <div class="feed" id="feed"></div>
+        <script>
+          const feed = document.getElementById("feed");
+          const status = document.getElementById("status");
+          const source = new EventSource("/dashboard/events");
+          function renderEvent(raw) {
+            const item = document.createElement("div");
+            item.className = "event";
+            const kind = document.createElement("span");
+            kind.className = "event-kind";
+            kind.textContent = raw.kind || "event";
+            const meta = document.createElement("div");
+            meta.className = "event-meta";
+            const parts = [];
+            if (raw.session_key) parts.push(raw.session_key);
+            if (raw.tool) parts.push("tool=" + raw.tool);
+            if (raw.detail) parts.push(raw.detail);
+            meta.textContent = parts.join(" · ");
+            item.appendChild(kind);
+            item.appendChild(meta);
+            feed.prepend(item);
+            while (feed.children.length > 200) feed.removeChild(feed.lastChild);
+          }
+          source.onopen = () => { status.textContent = "Connected"; };
+          source.onerror = () => { status.textContent = "Disconnected — retrying…"; };
+          source.onmessage = (event) => {
+            try { renderEvent(JSON.parse(event.data)); } catch (_) {}
+          };
+        </script>
+        """
+        return web.Response(text=_page("Activity", body), content_type="text/html")
+
     async def events(request: web.Request) -> web.StreamResponse:
         bus = get_activity_bus()
         queue = bus.subscribe()
@@ -157,6 +199,7 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
     app.router.add_get("/dashboard/assistants", assistants)
     app.router.add_get("/dashboard/sessions", sessions)
     app.router.add_get("/dashboard/sessions/{session_key:.+}", session_detail)
+    app.router.add_get("/dashboard/activity", activity)
     app.router.add_get("/dashboard/events", events)
 
 

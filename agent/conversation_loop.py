@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
@@ -34,6 +35,7 @@ def run_conversation_loop(
     tool_hook: ToolCallHook | None = None,
     text_hook: Callable[[str], None] | None = None,
     tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | dict[str, Any] | None = None,
 ) -> ConversationResult:
     """Run the agent loop until a text response or iteration budget is hit."""
     from agent.iteration_budget import IterationBudget
@@ -50,6 +52,8 @@ def run_conversation_loop(
         llm_kwargs: dict[str, Any] = {}
         if tools:
             llm_kwargs["tools"] = tools
+        if tool_choice is not None:
+            llm_kwargs["tool_choice"] = tool_choice
         if text_hook:
             llm_kwargs["on_text_delta"] = text_hook
         try:
@@ -79,16 +83,8 @@ def run_conversation_loop(
                 continue
 
             history.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
-            for call in tool_calls:
-                name, arguments = parse_tool_call(call)
-                result = executor({"id": call.get("id", ""), "name": name, "arguments": arguments})
-                history.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.get("id", ""),
-                        "content": result,
-                    }
-                )
+            tool_results = _execute_tool_calls(tool_calls, executor)
+            history.extend(tool_results)
             continue
 
         return ConversationResult(
@@ -110,3 +106,28 @@ def run_conversation_loop(
 
 def _default_exhausted_summary(messages: list[dict[str, Any]]) -> str:
     return "Stopped: iteration limit reached before producing a final answer."
+
+
+def _execute_tool_calls(
+    tool_calls: list[dict[str, Any]],
+    executor: ToolExecutor,
+) -> list[dict[str, Any]]:
+    def _run(call: dict[str, Any]) -> dict[str, Any]:
+        name, arguments = parse_tool_call(call)
+        result = executor({"id": call.get("id", ""), "name": name, "arguments": arguments})
+        return {
+            "role": "tool",
+            "tool_call_id": call.get("id", ""),
+            "content": result,
+        }
+
+    if len(tool_calls) <= 1:
+        return [_run(call) for call in tool_calls]
+
+    results: dict[str, dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=min(len(tool_calls), 8)) as pool:
+        futures = {pool.submit(_run, call): str(call.get("id", "")) for call in tool_calls}
+        for future in as_completed(futures):
+            item = future.result()
+            results[item["tool_call_id"]] = item
+    return [results[str(call.get("id", ""))] for call in tool_calls]

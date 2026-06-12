@@ -33,6 +33,7 @@ class LLMSettings:
     model: str = "deepseek-chat"
     base_url: str = "https://api.deepseek.com"
     api_key: str | None = None
+    tool_choice: str = "auto"
 
 
 @dataclass
@@ -122,6 +123,7 @@ def load_settings(home: Path | None = None) -> Settings:
         model=str(llm.get("model", preset_model)),
         base_url=str(llm.get("base_url", preset_base)),
         api_key=llm.get("api_key"),
+        tool_choice=str(llm.get("tool_choice", settings.llm.tool_choice)),
     )
 
     gateway = raw.get("gateway", {})

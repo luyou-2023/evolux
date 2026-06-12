@@ -189,6 +189,7 @@ class EvoluxAgent:
             tool_hook=merged_tool_hook,
             text_hook=text_hook,
             tools=tools,
+            tool_choice=self.settings.llm.tool_choice,
         )
         emit_activity(
             "turn_end",

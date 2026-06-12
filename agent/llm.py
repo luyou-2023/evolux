@@ -38,7 +38,12 @@ class LLMResponse:
 
 
 class LLMClient(Protocol):
-    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> LLMResponse: ...
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> LLMResponse: ...
 
 
 @dataclass
@@ -49,10 +54,17 @@ class MockLLMClient:
     responses: list[LLMResponse] = field(default_factory=list)
     calls: list[list[dict[str, Any]]] = field(default_factory=list, repr=False)
     last_tools: list[dict[str, Any]] | None = field(default=None, repr=False)
+    last_tool_choice: str | dict[str, Any] | None = field(default=None, repr=False)
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> LLMResponse:
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> LLMResponse:
         self.calls.append(list(messages))
         self.last_tools = tools
+        self.last_tool_choice = tool_choice
         if self.responses:
             return self.responses.pop(0)
         return LLMResponse(content=self.default_content)
@@ -67,10 +79,17 @@ class OpenAICompatibleClient:
     base_url: str = "https://api.openai.com/v1"
     timeout: float = 120.0
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> LLMResponse:
+    def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+    ) -> LLMResponse:
         payload: dict[str, Any] = {"model": self.model, "messages": messages}
         if tools:
             payload["tools"] = tools
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         request = urllib.request.Request(
@@ -112,12 +131,15 @@ class OpenAICompatibleClient:
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         *,
         on_delta: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         payload: dict[str, Any] = {"model": self.model, "messages": messages, "stream": True}
         if tools:
             payload["tools"] = tools
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
 
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         request = urllib.request.Request(
@@ -234,12 +256,18 @@ def llm_call_adapter(
         messages: list[dict[str, Any]],
         *,
         tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         on_text_delta: Callable[[str], None] | None = None,
     ):
         if on_text_delta and isinstance(client, OpenAICompatibleClient):
-            response = client.stream_complete(messages, tools=tools, on_delta=on_text_delta)
+            response = client.stream_complete(
+                messages,
+                tools=tools,
+                tool_choice=tool_choice,
+                on_delta=on_text_delta,
+            )
         else:
-            response = client.complete(messages, tools=tools)
+            response = client.complete(messages, tools=tools, tool_choice=tool_choice)
         return _AdapterResponse(response)
 
     return _call

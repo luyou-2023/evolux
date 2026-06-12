@@ -28,12 +28,12 @@ def test_gateway_sends_feishu_reply(evolux_home):
     parsed = parse_feishu_webhook(payload, assistant_id="work-bot")
 
     mock_client = MagicMock()
-    mock_client.send_text.return_value = {"code": 0}
+    mock_client.send_post.return_value = {"code": 0}
 
     async def _run():
         runner = GatewayRunner(
             home=evolux_home,
-            llm_call=lambda _: type("R", (), {"content": "pong", "tool_calls": []})(),
+            llm_call=lambda *_a, **_k: type("R", (), {"content": "pong", "tool_calls": []})(),
         )
         with patch.object(runner, "_get_feishu_client", return_value=mock_client):
             response = await runner.handle_message(parsed)
@@ -43,4 +43,9 @@ def test_gateway_sends_feishu_reply(evolux_home):
     response = asyncio.run(_run())
     assert response.content == "pong"
     assert response.reply_sent is True
-    mock_client.send_text.assert_called_once_with("oc_1", "pong")
+    assert response.trace is not None
+    mock_client.send_post.assert_called_once()
+    args = mock_client.send_post.call_args
+    assert args[0][0] == "oc_1"
+    post = args[0][1]
+    assert post["zh_cn"]["title"] == "Evolux"

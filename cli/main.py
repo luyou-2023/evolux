@@ -8,6 +8,7 @@ import sys
 from cli.acp_cmd import run_acp_start
 from cli.assistant import add_assistant_parser, run_assistant
 from cli.chat import run_chat, run_chat_once
+from cli.completion import run_completion
 from cli.cron_cmd import add_cron_parser, run_cron
 from cli.dashboard_cmd import run_dashboard_start
 from cli.gateway_cmd import run_gateway_start
@@ -26,6 +27,14 @@ def build_parser() -> argparse.ArgumentParser:
     chat = sub.add_parser("chat", help="Interactive orchestrator chat")
     chat.add_argument("--assistant", default="default", help="Assistant id")
     chat.add_argument("--once", metavar="MESSAGE", help="Run a single turn and print the reply")
+    chat.add_argument(
+        "--trace",
+        action="store_true",
+        help="Show orchestration trace (tools/MCP/subagents) on stderr",
+    )
+
+    completion = sub.add_parser("completion", help="Shell completion scripts")
+    completion.add_argument("shell", choices=["zsh", "bash"], help="Shell name")
 
     sub.add_parser("tui", help="Terminal status UI")
 
@@ -64,9 +73,13 @@ def main(argv: list[str] | None = None) -> int:
         return run_setup()
 
     if args.command == "chat":
+        trace = bool(getattr(args, "trace", False))
         if getattr(args, "once", None):
-            return run_chat_once(args.once, assistant_id=args.assistant)
-        return run_chat(assistant_id=args.assistant)
+            return run_chat_once(args.once, assistant_id=args.assistant, trace=trace)
+        return run_chat(assistant_id=args.assistant, trace=trace)
+
+    if args.command == "completion":
+        return run_completion(args.shell)
 
     if args.command == "tui":
         return run_tui()

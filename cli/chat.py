@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 from agent.runtime import bootstrap, create_llm_call
+from agent.turn_trace import TurnTrace
+from cli.trace_render import render_trace
 from evolux_constants import get_evolux_home
 from evolux_logging import setup_logging
 from gateway.session import SessionSource, build_session_key
@@ -24,18 +26,34 @@ def _build_chat_agent(home: Path | None, assistant_id: str):
     return base, agent, session_key
 
 
-def run_chat_once(message: str, home: Path | None = None, assistant_id: str = "default") -> int:
+def run_chat_once(
+    message: str,
+    home: Path | None = None,
+    assistant_id: str = "default",
+    *,
+    trace: bool = False,
+) -> int:
     _, agent, session_key = _build_chat_agent(home, assistant_id)
-    result = agent.run_orchestrator_turn(session_key, message, platform="cli")
+    turn_trace = TurnTrace() if trace else None
+    result = agent.run_orchestrator_turn(session_key, message, platform="cli", trace=turn_trace)
+    if turn_trace:
+        render_trace(turn_trace)
     print(result.content or "")
     agent.close()
     return 0
 
 
-def run_chat(home: Path | None = None, assistant_id: str = "default") -> int:
+def run_chat(
+    home: Path | None = None,
+    assistant_id: str = "default",
+    *,
+    trace: bool = False,
+) -> int:
     _, agent, session_key = _build_chat_agent(home, assistant_id)
 
     print(f"Evolux chat (assistant={assistant_id}). Type /exit to quit.")
+    if trace:
+        print("Trace mode: orchestration steps print to stderr.", file=sys.stderr)
     while True:
         try:
             line = input("you> ").strip()
@@ -47,7 +65,10 @@ def run_chat(home: Path | None = None, assistant_id: str = "default") -> int:
         if line in {"/exit", "/quit"}:
             break
 
-        result = agent.run_orchestrator_turn(session_key, line, platform="cli")
+        turn_trace = TurnTrace() if trace else None
+        result = agent.run_orchestrator_turn(session_key, line, platform="cli", trace=turn_trace)
+        if turn_trace:
+            render_trace(turn_trace)
         print(f"bot> {result.content or '(no response)'}")
 
     agent.close()

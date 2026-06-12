@@ -19,6 +19,8 @@ from evolux_state import SessionDB
 from agent.activity_hooks import ActivityToolHook, CombinedToolHook
 from agent.llm import resolve_api_key
 from agent.tool_selection import select_tools_for_turn
+from agent.trace_hooks import TraceToolHook
+from agent.turn_trace import TurnTrace
 from agent.tooling import build_combined_tool_executor, get_agent_tool_definitions, get_subagent_tool_definitions
 from gateway.activity import emit_activity
 from gateway.assistant_registry import AssistantRegistry
@@ -82,6 +84,7 @@ class EvoluxAgent:
             max_iterations=self.settings.orchestrator_max_iterations,
             tool_executor=combined_tool_executor,
         )
+        self._turn_trace = None
 
     def prepare_routing(self, user_message: str) -> RoutingContext:
         skill_candidates = self.skill_router.identify(
@@ -142,7 +145,9 @@ class EvoluxAgent:
         compress: bool = True,
         tool_hook=None,
         text_hook=None,
+        trace: TurnTrace | None = None,
     ):
+        self._turn_trace = trace
         session_id = self.session_db.get_or_create_session(
             session_key=session_key,
             assistant_id=self.assistant_id,
@@ -174,7 +179,17 @@ class EvoluxAgent:
             assistant_id=self.assistant_id,
             platform=platform,
         )
-        merged_tool_hook = CombinedToolHook(activity_hook, tool_hook)
+        hooks = [activity_hook]
+        if trace is not None:
+            trace.user_message = user_message[:200]
+            trace.set_routing(
+                skills=[item.skill_name for item in routing.skill_candidates[:5]],
+                agents=[item.agent_id for item in routing.fused_ranking[:5]],
+            )
+            hooks.append(TraceToolHook(trace))
+        if tool_hook is not None:
+            hooks.append(tool_hook)
+        merged_tool_hook = CombinedToolHook(*hooks) if len(hooks) > 1 else hooks[0]
 
         emit_activity(
             "turn_start",
@@ -201,6 +216,7 @@ class EvoluxAgent:
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)
             self.session_db.append_message(session_id, "assistant", result.content)
+        self._turn_trace = None
         return result
 
     def dispatch_subagent(
@@ -242,12 +258,20 @@ class EvoluxAgent:
         result = subagent.run_task(task, context_slice=context_slice)
         _touch_agent_usage(self.agent_registry, agent_def)
         self.subagent_index.sync_agent(self.agent_registry.get(agent_id))
-        return {
+        payload = {
             "agent_id": agent_id,
             "content": result.content,
             "exhausted": result.exhausted,
             "skills": skill_names,
         }
+        if self._turn_trace is not None:
+            self._turn_trace.add_subagent(
+                agent_id=agent_id,
+                task=task,
+                summary=str(result.content or ""),
+                status="error" if result.exhausted else "ok",
+            )
+        return payload
 
     def create_subagent(
         self,

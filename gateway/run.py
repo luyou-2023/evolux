@@ -12,6 +12,8 @@ from typing import Any, Callable
 from gateway.activity import emit_activity
 from gateway.assistant_registry import AssistantRegistry
 from gateway.events import MessageEvent
+from agent.turn_trace import TurnTrace
+from gateway.platforms.feishu_format import build_feishu_post_content
 from gateway.platforms.feishu_api import FeishuAPIClient, build_feishu_client
 from gateway.session import build_session_key
 from run_agent import EvoluxAgent
@@ -27,6 +29,7 @@ class GatewayResponse:
     exhausted: bool = False
     reply_sent: bool = False
     reply_error: str | None = None
+    trace: TurnTrace | None = None
 
 
 class GatewayRunner:
@@ -67,16 +70,19 @@ class GatewayRunner:
             detail=event.text[:200],
         )
         agent = self._get_agent(event.assistant_id)
+        trace = TurnTrace()
         result = agent.run_orchestrator_turn(
             session_key=session_key,
             user_message=event.text,
             platform=event.source.platform,
+            trace=trace,
         )
         response = GatewayResponse(
             session_key=session_key,
             assistant_id=event.assistant_id,
             content=result.content,
             exhausted=result.exhausted,
+            trace=trace,
         )
         if (
             self.send_feishu_reply
@@ -92,11 +98,18 @@ class GatewayRunner:
         if not client:
             return
         try:
-            client.send_text(event.source.chat_id, response.content or "")
+            post = build_feishu_post_content(answer=response.content or "", trace=response.trace)
+            client.send_post(event.source.chat_id, post)
             response.reply_sent = True
         except Exception as exc:
             response.reply_error = str(exc)
             logger.warning("Feishu reply failed assistant=%s: %s", event.assistant_id, exc)
+            try:
+                client.send_text(event.source.chat_id, response.content or "")
+                response.reply_sent = True
+                response.reply_error = None
+            except Exception as fallback_exc:
+                response.reply_error = str(fallback_exc)
 
     def _get_feishu_client(self, assistant_id: str) -> FeishuAPIClient | None:
         if assistant_id in self._feishu_clients:

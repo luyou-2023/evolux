@@ -16,6 +16,7 @@ logger = logging.getLogger("evolux.gateway.feishu_api")
 
 FEISHU_API_BASE = "https://open.feishu.cn/open-apis"
 HttpPost = Callable[[str, dict[str, str], bytes], dict[str, Any]]
+HttpGet = Callable[[str, dict[str, str]], dict[str, Any]]
 
 
 @dataclass
@@ -31,6 +32,7 @@ class FeishuAPIClient:
     _token: str | None = field(default=None, init=False, repr=False)
     _token_expires_at: float = field(default=0.0, init=False, repr=False)
     _http_post: HttpPost | None = field(default=None, init=False, repr=False)
+    _http_get: HttpGet | None = field(default=None, init=False, repr=False)
 
     def send_text(self, chat_id: str, text: str) -> dict[str, Any]:
         token = self.get_tenant_access_token()
@@ -43,6 +45,19 @@ class FeishuAPIClient:
         body = self._post(url, token, payload)
         logger.info("Feishu message sent to chat_id=%s", chat_id)
         return body
+
+    def read_doc_raw(self, document_id: str) -> dict[str, Any]:
+        token = self.get_tenant_access_token()
+        url = f"{self.base_url}/docx/v1/documents/{document_id}/raw_content"
+        return self._get(url, token)
+
+    def create_doc(self, title: str, *, folder_token: str | None = None) -> dict[str, Any]:
+        token = self.get_tenant_access_token()
+        payload: dict[str, Any] = {"title": title}
+        if folder_token:
+            payload["folder_token"] = folder_token
+        url = f"{self.base_url}/docx/v1/documents"
+        return self._post(url, token, payload)
 
     def get_tenant_access_token(self) -> str:
         now = time.time()
@@ -68,6 +83,23 @@ class FeishuAPIClient:
             return self._http_post(url, headers, data)
 
         request = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with _urlopen(request, timeout=30.0) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Feishu API error {exc.code}: {detail}") from exc
+
+        if body.get("code") not in (0, None):
+            raise RuntimeError(f"Feishu API returned code={body.get('code')}: {body.get('msg')}")
+        return body
+
+    def _get(self, url: str, token: str) -> dict[str, Any]:
+        headers = {"Authorization": f"Bearer {token}"}
+        if self._http_get:
+            return self._http_get(url, headers)
+
+        request = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with _urlopen(request, timeout=30.0) as response:
                 body = json.loads(response.read().decode("utf-8"))

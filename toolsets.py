@@ -78,10 +78,15 @@ TOOLSETS: dict[str, dict[str, Any]] = {
         "tools": [],
         "includes": ["file", "skills", "memory", "session_search", "todo", "terminal", "web"],
     },
+    "feishu": {
+        "description": "Feishu messaging and document tools",
+        "tools": ["feishu_message", "feishu_doc_read", "feishu_doc_create"],
+        "includes": [],
+    },
     "evolux-feishu": {
-        "description": "Feishu platform preset (doc tools future)",
+        "description": "Feishu platform preset",
         "tools": [],
-        "includes": ["evolux-orchestrator"],
+        "includes": ["evolux-orchestrator", "feishu"],
     },
     "evolux-acp": {
         "description": "Editor integration preset (Hermes hermes-acp aligned)",

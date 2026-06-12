@@ -27,6 +27,20 @@ def test_feishu_client_gets_token_and_sends_message():
     assert len(calls) == 2
 
 
+def test_feishu_client_reads_doc_raw():
+    def fake_get(url: str, headers: dict[str, str]) -> dict:
+        assert "raw_content" in url
+        assert headers["Authorization"] == "Bearer t-token"
+        return {"code": 0, "data": {"content": "hello doc"}}
+
+    client = FeishuAPIClient(credentials=FeishuCredentials(app_id="app", app_secret="secret"))
+    client._token = "t-token"
+    client._token_expires_at = 9999999999
+    client._http_get = fake_get
+    body = client.read_doc_raw("doxcn123")
+    assert body["data"]["content"] == "hello doc"
+
+
 def test_build_feishu_client_requires_credentials():
     from gateway.platforms.feishu_api import build_feishu_client
 

@@ -23,6 +23,7 @@
 | Phase 4 扩展与打磨 | ✅ 完成 |
 | Phase 5 Skills / MCP 集成 / Cron | ✅ 完成 |
 | Hermes 对齐（tools/skills/MCP/ACP） | ✅ 完成 |
+| Phase 6 Feishu 工具 / ACP 进度流 | ✅ 完成 |
 
 **实现前必读：**
 

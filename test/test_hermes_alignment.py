@@ -35,3 +35,11 @@ def test_cli_platform_includes_terminal_and_web():
     tool_names = {item["function"]["name"] for item in tools}
     assert "terminal" in tool_names
     assert "web_search" in tool_names
+
+
+def test_feishu_platform_includes_doc_tools():
+    tools = get_tool_definitions(platform="feishu")
+    tool_names = {item["function"]["name"] for item in tools}
+    assert "feishu_message" in tool_names
+    assert "feishu_doc_read" in tool_names
+    assert "dispatch_subagent" in tool_names

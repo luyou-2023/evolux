@@ -23,6 +23,9 @@ TOOL_KIND_MAP: dict[str, ToolKind] = {
     "create_subagent": "execute",
     "dispatch_subagent": "execute",
     "retire_subagent": "execute",
+    "feishu_message": "other",
+    "feishu_doc_read": "read",
+    "feishu_doc_create": "edit",
 }
 
 
@@ -40,4 +43,8 @@ def build_tool_title(tool_name: str, args: dict[str, Any]) -> str:
         return f"web search: {args.get('query', '?')}"
     if tool_name == "read_file":
         return f"read: {args.get('path', '?')}"
+    if tool_name == "feishu_doc_read":
+        return f"feishu doc: {args.get('document_id', '?')}"
+    if tool_name == "feishu_message":
+        return f"feishu message → {args.get('chat_id', '?')}"
     return tool_name

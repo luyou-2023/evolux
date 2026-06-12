@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
+from agent.tool_hooks import ToolCallHook, wrap_tool_executor
+
 
 class LLMCallable(Protocol):
     def __call__(self, messages: list[dict[str, Any]]) -> Any: ...
@@ -28,6 +30,7 @@ def run_conversation_loop(
     max_iterations: int,
     tool_executor: ToolExecutor | None = None,
     on_exhausted: Callable[[list[dict[str, Any]]], str] | None = None,
+    tool_hook: ToolCallHook | None = None,
 ) -> ConversationResult:
     """Run the agent loop until a text response or iteration budget is hit."""
     from agent.iteration_budget import IterationBudget
@@ -35,6 +38,7 @@ def run_conversation_loop(
     history = list(messages)
     budget = IterationBudget(max_total=max_iterations)
     iterations_used = 0
+    executor = wrap_tool_executor(tool_executor, tool_hook) if tool_executor else None
 
     while budget.remaining > 0:
         if not budget.consume():
@@ -46,7 +50,7 @@ def run_conversation_loop(
         content = getattr(response, "content", None)
 
         if tool_calls:
-            if tool_executor is None:
+            if executor is None:
                 history.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
                 for call in tool_calls:
                     history.append(
@@ -61,7 +65,7 @@ def run_conversation_loop(
 
             history.append({"role": "assistant", "content": content or "", "tool_calls": tool_calls})
             for call in tool_calls:
-                result = tool_executor(call)
+                result = executor(call)
                 history.append(
                     {
                         "role": "tool",

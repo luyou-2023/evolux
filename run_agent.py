@@ -125,6 +125,7 @@ class EvoluxAgent:
         platform: str = "cli",
         *,
         compress: bool = True,
+        tool_hook=None,
     ):
         session_id = self.session_db.get_or_create_session(
             session_key=session_key,
@@ -144,7 +145,7 @@ class EvoluxAgent:
         prefix = self._build_prefix_messages(routing)
         turn_messages = history + [{"role": "user", "content": user_message}]
 
-        result = self.orchestrator.run_turn(turn_messages, prefix_messages=prefix)
+        result = self.orchestrator.run_turn(turn_messages, prefix_messages=prefix, tool_hook=tool_hook)
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)
             self.session_db.append_message(session_id, "assistant", result.content)

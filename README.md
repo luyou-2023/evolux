@@ -14,12 +14,23 @@ evolux version
 ## Docs
 
 - [System architecture](docs/design/01-系统架构文档.md)
-- [Design index](docs/design/README.md)
+- [Detailed design](docs/design/02-详细设计文档.md)
+- [Implementation plan](docs/design/03-实施计划.md)
 
-## Phase 1 (current)
+## Progress
 
-- Orchestrator loop (max 30 iterations)
-- Sub-agent loop (max 90 iterations)
-- AgentRegistry (JSON)
-- SessionDB (SQLite)
-- EvoluxAgent facade + CLI stub
+| Phase | Status |
+|-------|--------|
+| Phase 1 Core runtime | Done |
+| Phase 2 Triple routing + compression | Done |
+| Phase 3 Gateway + multi-assistant | Planned |
+| Phase 4 Extensions | Planned |
+
+## Phase 2 highlights
+
+- Skill Router (keyword + vector) + SubAgent vector index
+- `fuse_routing()` triple-route fusion
+- Context compression (keep recent 10 turns)
+- Memory snapshot (MEMORY/USER)
+- Orchestrator tools: `identify_skills`, `search_subagents`, `dispatch_subagent`, `create_subagent`
+- `EvoluxAgent.prepare_routing()` integrated into turns

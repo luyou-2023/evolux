@@ -9,7 +9,7 @@ from agent.tool_hooks import ToolCallHook, wrap_tool_executor
 
 
 class LLMCallable(Protocol):
-    def __call__(self, messages: list[dict[str, Any]]) -> Any: ...
+    def __call__(self, messages: list[dict[str, Any]], /, **kwargs: Any) -> Any: ...
 
 
 class ToolExecutor(Protocol):
@@ -31,6 +31,7 @@ def run_conversation_loop(
     tool_executor: ToolExecutor | None = None,
     on_exhausted: Callable[[list[dict[str, Any]]], str] | None = None,
     tool_hook: ToolCallHook | None = None,
+    text_hook: Callable[[str], None] | None = None,
 ) -> ConversationResult:
     """Run the agent loop until a text response or iteration budget is hit."""
     from agent.iteration_budget import IterationBudget
@@ -44,7 +45,13 @@ def run_conversation_loop(
         if not budget.consume():
             break
         iterations_used += 1
-        response = llm_call(history)
+        if text_hook:
+            try:
+                response = llm_call(history, on_text_delta=text_hook)
+            except TypeError:
+                response = llm_call(history)
+        else:
+            response = llm_call(history)
 
         tool_calls = getattr(response, "tool_calls", None) or []
         content = getattr(response, "content", None)

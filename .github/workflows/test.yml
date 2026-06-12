@@ -16,4 +16,4 @@ jobs:
       - name: Install
         run: pip install -e ".[dev,gateway]"
       - name: Run tests
-        run: pytest -v
+        run: pytest -m "not live" -v

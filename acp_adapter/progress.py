@@ -1,4 +1,4 @@
-"""Emit ACP tool call progress updates from orchestrator turns."""
+"""Emit ACP tool call progress and text streaming updates."""
 
 from __future__ import annotations
 
@@ -56,3 +56,39 @@ class AcpToolProgressHook:
                 logger.warning("ACP tool progress update failed: %s", exc)
 
         future.add_done_callback(_log_error)
+
+
+class AcpTextStreamHook:
+    """Push LLM text deltas to the ACP client during orchestrator turns."""
+
+    def __init__(self, *, loop: asyncio.AbstractEventLoop, conn: Client, session_id: str) -> None:
+        self._loop = loop
+        self._conn = conn
+        self._session_id = session_id
+        self.streamed = False
+
+    def __call__(self, delta: str) -> None:
+        if not delta:
+            return
+        self.streamed = True
+        update = acp.update_agent_message_text(delta)
+        future = asyncio.run_coroutine_threadsafe(
+            self._conn.session_update(self._session_id, update),
+            self._loop,
+        )
+
+        def _log_error(fut: asyncio.Future) -> None:
+            try:
+                fut.result()
+            except Exception as exc:
+                logger.warning("ACP text stream update failed: %s", exc)
+
+        future.add_done_callback(_log_error)
+
+
+class AcpSessionHook:
+    """Combined tool progress + text streaming for one ACP prompt turn."""
+
+    def __init__(self, *, loop: asyncio.AbstractEventLoop, conn: Client, session_id: str) -> None:
+        self.tool = AcpToolProgressHook(loop=loop, conn=conn, session_id=session_id)
+        self.text = AcpTextStreamHook(loop=loop, conn=conn, session_id=session_id)

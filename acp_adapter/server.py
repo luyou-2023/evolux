@@ -109,23 +109,24 @@ class EvoluxACPAgent:
             return PromptResponse(stop_reason="end_turn")
 
         loop = asyncio.get_running_loop()
-        hook = None
+        session_hook = None
         if self._conn:
-            from acp_adapter.progress import AcpToolProgressHook
+            from acp_adapter.progress import AcpSessionHook
 
-            hook = AcpToolProgressHook(loop=loop, conn=self._conn, session_id=session_id)
+            session_hook = AcpSessionHook(loop=loop, conn=self._conn, session_id=session_id)
 
         def _run_turn() -> str:
             result = state.agent.run_orchestrator_turn(
                 state.session_key,
                 user_text,
                 platform="acp",
-                tool_hook=hook,
+                tool_hook=session_hook.tool if session_hook else None,
+                text_hook=session_hook.text if session_hook else None,
             )
-            return result.content or ""
+            return result.content or "", session_hook.text.streamed if session_hook else False
 
-        content = await loop.run_in_executor(_executor, _run_turn)
-        if self._conn and content:
+        content, streamed = await loop.run_in_executor(_executor, _run_turn)
+        if self._conn and content and not streamed:
             update = acp.update_agent_message_text(content)
             await self._conn.session_update(session_id, update)
         return PromptResponse(stop_reason="end_turn")

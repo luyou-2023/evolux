@@ -6,15 +6,22 @@ from pathlib import Path
 
 from agent.agent_registry import AgentDefinition, AgentRegistry
 from vector.embedder import Embedder, HashEmbedder
-from vector.store import JsonVectorStore
+from vector.store import create_vector_store
 
 
 class SubAgentIndex:
-    def __init__(self, home: Path, registry: AgentRegistry | None = None, embedder: Embedder | None = None):
+    def __init__(
+        self,
+        home: Path,
+        registry: AgentRegistry | None = None,
+        embedder: Embedder | None = None,
+        *,
+        backend: str = "json",
+    ):
         self.home = home
         self.registry = registry or AgentRegistry(home=home)
         self.embedder = embedder or HashEmbedder()
-        self.store = JsonVectorStore(home / "vector" / "subagents.json")
+        self.store = create_vector_store(home, "subagents.json", backend=backend)
 
     def sync_agent(self, agent: AgentDefinition) -> None:
         if agent.retired:

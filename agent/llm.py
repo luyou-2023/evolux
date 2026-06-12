@@ -106,6 +106,50 @@ class OpenAICompatibleClient:
             )
         return LLMResponse(content=message.get("content"), tool_calls=tool_calls)
 
+    def stream_complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        *,
+        on_delta: Callable[[str], None] | None = None,
+    ) -> LLMResponse:
+        payload: dict[str, Any] = {"model": self.model, "messages": messages, "stream": True}
+        if tools:
+            payload["tools"] = tools
+
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        content_parts: list[str] = []
+        try:
+            with _urlopen(request, timeout=self.timeout) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    chunk = json.loads(data_str)
+                    delta = ((chunk.get("choices") or [{}])[0].get("delta") or {}).get("content")
+                    if not delta:
+                        continue
+                    content_parts.append(delta)
+                    if on_delta:
+                        on_delta(delta)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"LLM API error {exc.code}: {detail}") from exc
+
+        return LLMResponse(content="".join(content_parts) or None)
+
 
 def _ssl_context() -> ssl.SSLContext:
     """Build TLS context; prefer certifi bundle (macOS Python often lacks system CAs)."""
@@ -162,7 +206,9 @@ def resolve_api_key(provider: str, explicit: str | None = None) -> str | None:
     return None
 
 
-def llm_call_adapter(client: LLMClient) -> Callable[[list[dict[str, Any]]], Any]:
+def llm_call_adapter(
+    client: LLMClient,
+) -> Callable[..., Any]:
     """Bridge LLMClient to conversation_loop's duck-typed llm_call."""
 
     class _AdapterResponse:
@@ -177,8 +223,12 @@ def llm_call_adapter(client: LLMClient) -> Callable[[list[dict[str, Any]]], Any]
                 for call in response.tool_calls
             ]
 
-    def _call(messages: list[dict[str, Any]]):
-        return _AdapterResponse(client.complete(messages))
+    def _call(messages: list[dict[str, Any]], *, on_text_delta: Callable[[str], None] | None = None):
+        if on_text_delta and isinstance(client, OpenAICompatibleClient):
+            response = client.stream_complete(messages, on_delta=on_text_delta)
+        else:
+            response = client.complete(messages)
+        return _AdapterResponse(response)
 
     return _call
 

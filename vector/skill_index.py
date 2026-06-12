@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from vector.embedder import Embedder, HashEmbedder
-from vector.store import JsonVectorStore
+from vector.store import create_vector_store
 
 
 @dataclass
@@ -18,10 +18,16 @@ class SkillRecord:
 
 
 class SkillIndex:
-    def __init__(self, home: Path, embedder: Embedder | None = None):
+    def __init__(
+        self,
+        home: Path,
+        embedder: Embedder | None = None,
+        *,
+        backend: str = "json",
+    ):
         self.home = home
         self.embedder = embedder or HashEmbedder()
-        self.store = JsonVectorStore(home / "vector" / "skills.json")
+        self.store = create_vector_store(home, "skills.json", backend=backend)
 
     def upsert(self, record: SkillRecord) -> None:
         text = f"{record.skill_name} {record.description}"

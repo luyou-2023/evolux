@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from agent.llm import create_llm_client, llm_call_adapter
+from agent.llm import create_llm_client, resolve_api_key, llm_call_adapter
 from agent.settings import Settings, load_settings
 from evolux_constants import get_evolux_home
 from evolux_env import load_env

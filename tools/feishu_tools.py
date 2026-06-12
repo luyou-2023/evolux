@@ -75,6 +75,21 @@ def feishu_doc_create(*, title: str, folder_token: str | None = None, assistant_
     )
 
 
+def feishu_doc_append(*, document_id: str, text: str, assistant_id: str = "default") -> str:
+    document_id = (document_id or "").strip()
+    text = (text or "").strip()
+    if not document_id or not text:
+        return tool_error("document_id and text are required")
+    client, err = _resolve_client(assistant_id)
+    if err:
+        return err
+    try:
+        body = client.append_doc_text(document_id, text)
+    except Exception as exc:
+        return tool_error(f"feishu_doc_append failed: {exc}")
+    return json.dumps({"success": True, "document_id": document_id, "result": body.get("data")}, ensure_ascii=False)
+
+
 def check_feishu_requirements() -> bool:
     return True
 
@@ -115,6 +130,19 @@ FEISHU_DOC_CREATE_SCHEMA = {
     },
 }
 
+FEISHU_DOC_APPEND_SCHEMA = {
+    "name": "feishu_doc_append",
+    "description": "Append a paragraph to an existing Feishu document.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string"},
+            "text": {"type": "string"},
+        },
+        "required": ["document_id", "text"],
+    },
+}
+
 
 registry.register(
     "feishu_message",
@@ -145,6 +173,17 @@ registry.register(
         assistant_id=str(kwargs.get("assistant_id", "default")),
     ),
     FEISHU_DOC_CREATE_SCHEMA,
+    toolset="feishu",
+    check_fn=check_feishu_requirements,
+)
+registry.register(
+    "feishu_doc_append",
+    lambda args, **kwargs: feishu_doc_append(
+        document_id=str(args.get("document_id", "")),
+        text=str(args.get("text", "")),
+        assistant_id=str(kwargs.get("assistant_id", "default")),
+    ),
+    FEISHU_DOC_APPEND_SCHEMA,
     toolset="feishu",
     check_fn=check_feishu_requirements,
 )

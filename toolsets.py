@@ -80,7 +80,7 @@ TOOLSETS: dict[str, dict[str, Any]] = {
     },
     "feishu": {
         "description": "Feishu messaging and document tools",
-        "tools": ["feishu_message", "feishu_doc_read", "feishu_doc_create"],
+        "tools": ["feishu_message", "feishu_doc_read", "feishu_doc_create", "feishu_doc_append"],
         "includes": [],
     },
     "evolux-feishu": {

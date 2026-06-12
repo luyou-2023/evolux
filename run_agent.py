@@ -16,10 +16,12 @@ from agent.skill_router import SkillRouter
 from agent.subagent import SubAgent
 from evolux_constants import get_evolux_home
 from evolux_state import SessionDB
+from agent.llm import resolve_api_key
 from agent.tooling import build_combined_tool_executor
 from gateway.assistant_registry import AssistantRegistry
 from mcp.manager import MCPManager
 from tools.orchestrator_tools import OrchestratorToolContext
+from vector.embedder import create_embedder
 from vector.subagent_index import SubAgentIndex
 
 
@@ -39,8 +41,18 @@ class EvoluxAgent:
         self.settings = settings or load_settings(self.home)
         self.session_db = SessionDB(home=self.home)
         self.agent_registry = AgentRegistry(home=self.home)
-        self.skill_router = SkillRouter(home=self.home)
-        self.subagent_index = SubAgentIndex(self.home, registry=self.agent_registry)
+        embedder = create_embedder(
+            provider=self.settings.vector.embedding,
+            api_key=resolve_api_key(self.settings.llm.provider, self.settings.llm.api_key),
+        )
+        vector_backend = self.settings.vector.backend
+        self.skill_router = SkillRouter(self.home, embedder=embedder, backend=vector_backend)
+        self.subagent_index = SubAgentIndex(
+            self.home,
+            registry=self.agent_registry,
+            embedder=embedder,
+            backend=vector_backend,
+        )
         self.memory_manager = MemoryManager(home=self.home, assistant_id=assistant_id)
         self.mcp_manager = MCPManager(home=self.home, settings=self.settings)
         from mcp.registry_bridge import sync_mcp_tools
@@ -126,6 +138,7 @@ class EvoluxAgent:
         *,
         compress: bool = True,
         tool_hook=None,
+        text_hook=None,
     ):
         session_id = self.session_db.get_or_create_session(
             session_key=session_key,
@@ -145,7 +158,12 @@ class EvoluxAgent:
         prefix = self._build_prefix_messages(routing)
         turn_messages = history + [{"role": "user", "content": user_message}]
 
-        result = self.orchestrator.run_turn(turn_messages, prefix_messages=prefix, tool_hook=tool_hook)
+        result = self.orchestrator.run_turn(
+            turn_messages,
+            prefix_messages=prefix,
+            tool_hook=tool_hook,
+            text_hook=text_hook,
+        )
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)
             self.session_db.append_message(session_id, "assistant", result.content)

@@ -59,6 +59,27 @@ class FeishuAPIClient:
         url = f"{self.base_url}/docx/v1/documents"
         return self._post(url, token, payload)
 
+    def append_doc_text(self, document_id: str, text: str) -> dict[str, Any]:
+        """Append a paragraph to a document via block children API."""
+        token = self.get_tenant_access_token()
+        blocks_url = f"{self.base_url}/docx/v1/documents/{document_id}/blocks"
+        blocks_body = self._get(blocks_url, token)
+        items = (blocks_body.get("data") or {}).get("items") or []
+        if not items:
+            raise RuntimeError("document has no blocks")
+        block_id = str(items[0].get("block_id") or "")
+        url = f"{self.base_url}/docx/v1/documents/{document_id}/blocks/{block_id}/children"
+        payload = {
+            "children": [
+                {
+                    "block_type": 2,
+                    "text": {"elements": [{"text_run": {"content": text}}]},
+                }
+            ],
+            "index": -1,
+        }
+        return self._post(url, token, payload)
+
     def get_tenant_access_token(self) -> str:
         now = time.time()
         if self._token and now < self._token_expires_at - 60:

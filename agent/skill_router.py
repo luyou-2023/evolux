@@ -23,11 +23,12 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
 class SkillRouter:
-    def __init__(self, home: Path, embedder: Embedder | None = None):
+    def __init__(self, home: Path, embedder: Embedder | None = None, *, backend: str = "json"):
         self.home = home
         self.skills_dir = home / "skills"
-        self.index = SkillIndex(home, embedder=embedder or HashEmbedder())
-        self.embedder = embedder or HashEmbedder()
+        embedder = embedder or HashEmbedder()
+        self.index = SkillIndex(home, embedder=embedder, backend=backend)
+        self.embedder = embedder
 
     def scan_skills(self) -> list[SkillMeta]:
         if not self.skills_dir.exists():

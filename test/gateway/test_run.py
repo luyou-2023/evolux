@@ -67,3 +67,29 @@ def test_gateway_runner_emits_card_action_activity(evolux_home):
     card_events = [item for item in recent if item.kind == "card_action_received"]
     assert card_events[-1].detail == "evolux"
     assert card_events[-1].platform == "feishu"
+
+
+def test_gateway_runner_handles_slash_new(evolux_home):
+    runner = GatewayRunner(
+        home=evolux_home,
+        llm_call=lambda _: type("R", (), {"content": "should not run", "tool_calls": []})(),
+        send_feishu_reply=False,
+    )
+    session_key = "orchestrator:default:cli:dm:slash"
+    agent = runner._get_agent("default")
+    session_id = agent.session_db.get_or_create_session(session_key, "default", "cli")
+    agent.session_db.append_message(session_id, "user", "old")
+    agent.session_db.append_message(session_id, "assistant", "old reply")
+
+    event = MessageEvent(
+        assistant_id="default",
+        source=SessionSource(platform="cli", chat_type="dm", chat_id="slash"),
+        text="/new",
+    )
+    response = runner.handle_message_sync(event)
+    new_session_id = agent.session_db.get_session_id_by_key(session_key)
+    runner.shutdown()
+
+    assert response.content and "新会话" in response.content
+    assert response.plain_reply is True
+    assert new_session_id != session_id

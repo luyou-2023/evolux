@@ -103,6 +103,52 @@ class SessionDB:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def count_messages(self, session_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM messages WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return int(row["c"])
+
+    def get_last_user_message(self, session_id: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT content FROM messages WHERE session_id = ? AND role = 'user' ORDER BY id DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        return str(row["content"]) if row else None
+
+    def pop_last_exchange(self, session_id: str) -> bool:
+        rows = self._conn.execute(
+            "SELECT id, role FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 2",
+            (session_id,),
+        ).fetchall()
+        if not rows:
+            return False
+        ids_to_delete: list[int] = []
+        if rows[0]["role"] == "assistant":
+            ids_to_delete.append(int(rows[0]["id"]))
+            if len(rows) > 1 and rows[1]["role"] == "user":
+                ids_to_delete.append(int(rows[1]["id"]))
+        elif rows[0]["role"] == "user":
+            ids_to_delete.append(int(rows[0]["id"]))
+        if not ids_to_delete:
+            return False
+        placeholders = ",".join("?" for _ in ids_to_delete)
+        self._conn.execute(
+            f"DELETE FROM messages WHERE id IN ({placeholders})",
+            ids_to_delete,
+        )
+        self._conn.commit()
+        return True
+
+    def reset_session(self, session_key: str, assistant_id: str, platform: str) -> str:
+        session_id = self.get_session_id_by_key(session_key)
+        if session_id:
+            self._conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            self._conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+            self._conn.commit()
+        return self.create_session(session_key, assistant_id, platform)
+
     def list_sessions(
         self,
         *,

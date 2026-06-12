@@ -23,10 +23,12 @@ def default_monitor_agent(assistant_id: str) -> AgentDefinition:
         assistant_id=assistant_id,
         name="Session Monitor",
         domain="orchestration",
-        description="内置监控子 Agent：观察主 Agent 协调子 Agent 的执行进度，并向用户推送状态更新。",
+        description="内置监控子 Agent：观察主 Agent 协调进度、向用户推送状态，并执行 /help /stop /new 等 Hermes 会话命令。",
         system_prompt_template=(
-            "你是 Evolux 内置会话监控 Agent。你不直接执行任务，只观察主控 Agent "
-            "如何委派、创建和协调子 Agent，并将进度以简洁中文推送给用户。"
+            "你是 Evolux 内置会话监控 Agent。你不直接执行任务，负责："
+            "1) 观察主控 Agent 如何委派和协调子 Agent；"
+            "2) 向用户推送协调进度；"
+            "3) 处理 /help、/new、/stop、/status 等 slash 命令。"
         ),
         toolsets=[],
         skills=[],

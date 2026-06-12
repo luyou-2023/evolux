@@ -34,6 +34,7 @@ class GatewayResponse:
     reply_sent: bool = False
     reply_error: str | None = None
     trace: TurnTrace | None = None
+    plain_reply: bool = False
 
 
 class GatewayRunner:
@@ -114,6 +115,7 @@ class GatewayRunner:
             content=result.content,
             exhausted=result.exhausted,
             trace=trace,
+            plain_reply=getattr(result, "plain_reply", False),
         )
         if (
             self.send_feishu_reply
@@ -121,8 +123,22 @@ class GatewayRunner:
             and response.content
             and event.source.chat_id
         ):
-            self._try_send_feishu_reply(event, response)
+            if response.plain_reply:
+                self._send_feishu_text(event, response)
+            else:
+                self._try_send_feishu_reply(event, response)
         return response
+
+    def _send_feishu_text(self, event: MessageEvent, response: GatewayResponse) -> None:
+        client = self._get_feishu_client(event.assistant_id)
+        if not client:
+            return
+        try:
+            client.send_text(event.source.chat_id, response.content or "")
+            response.reply_sent = True
+        except Exception as exc:
+            response.reply_error = str(exc)
+            logger.warning("Feishu text reply failed assistant=%s: %s", event.assistant_id, exc)
 
     def _try_send_feishu_reply(self, event: MessageEvent, response: GatewayResponse) -> None:
         client = self._get_feishu_client(event.assistant_id)

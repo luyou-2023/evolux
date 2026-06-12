@@ -30,6 +30,7 @@
 | 飞书 clarify 卡片按钮回调（点选自动续聊） | ✅ 完成 |
 | 飞书卡片点选 UI 更新 + Dashboard card_action 活动 | ✅ 完成 |
 | 默认 Session Monitor 子 Agent（协调进度推送） | ✅ 完成 |
+| Session Monitor slash 命令（/help /stop /new 等） | ✅ 完成 |
 | Phase 6 Feishu 工具 / ACP 进度流 | ✅ 完成 |
 | Phase 7 SQLite 向量 / LLM 流式 / CI | ✅ 完成 |
 | Phase 8 LLM tools 接线 / Sub-agent MCP 子集 | ✅ 完成 |

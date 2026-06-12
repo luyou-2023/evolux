@@ -33,3 +33,17 @@ def test_session_db_list_sessions(evolux_home):
     work_sessions = db.list_sessions(assistant_id="work", limit=10)
     assert len(work_sessions) == 1
     assert work_sessions[0]["assistant_id"] == "work"
+
+
+def test_session_db_reset_and_pop_exchange(evolux_home):
+    db = SessionDB(home=evolux_home)
+    key = "orchestrator:default:cli:dm:x"
+    session_id = db.create_session(key, "default", "cli")
+    db.append_message(session_id, "user", "one")
+    db.append_message(session_id, "assistant", "two")
+    assert db.count_messages(session_id) == 2
+    assert db.pop_last_exchange(session_id) is True
+    assert db.count_messages(session_id) == 0
+    new_id = db.reset_session(key, "default", "cli")
+    assert new_id != session_id
+    assert db.get_last_user_message(new_id) is None

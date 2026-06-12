@@ -8,11 +8,14 @@ from typing import Any, Callable
 
 from agent.agent_registry import AgentDefinition, AgentRegistry
 from agent.context_compressor import CompressionConfig, compress_messages
+from agent.conversation_loop import ConversationResult
+from agent.slash_commands import SlashCommandContext, try_handle_slash_command
 from agent.memory_manager import MemoryManager
 from agent.orchestrator import OrchestratorAgent
 from agent.routing import FusionWeights, RoutingContext, SubAgentCandidate, fuse_routing
 from agent.settings import Settings, load_settings
 from agent.session_monitor import (
+    SESSION_MONITOR_AGENT_ID,
     SessionMonitorHook,
     ensure_session_monitor_agent,
     is_internal_agent,
@@ -27,6 +30,7 @@ from agent.activity_hooks import ActivityToolHook, CombinedToolHook
 from agent.llm import resolve_api_key
 from agent.tool_selection import select_tools_for_turn
 from agent.trace_hooks import TraceToolHook
+from agent.turn_cancel import bind_session_key, clear_turn_cancel, unbind_session_key
 from agent.turn_trace import TurnTrace
 from agent.tooling import build_combined_tool_executor, get_agent_tool_definitions, get_subagent_tool_definitions
 from gateway.activity import emit_activity
@@ -163,11 +167,67 @@ class EvoluxAgent:
         self._progress_callback = progress_callback if self.settings.monitor.push_interim else None
         self._session_key = session_key
         self._platform = platform
+        clear_turn_cancel(session_key)
+        cancel_token = bind_session_key(session_key)
+        try:
+            return self._run_orchestrator_turn_body(
+                session_key=session_key,
+                user_message=user_message,
+                platform=platform,
+                compress=compress,
+                tool_hook=tool_hook,
+                text_hook=text_hook,
+                trace=trace,
+            )
+        finally:
+            unbind_session_key(cancel_token)
+            self._turn_trace = None
+            self._progress_callback = None
+
+    def _run_orchestrator_turn_body(
+        self,
+        session_key: str,
+        user_message: str,
+        platform: str,
+        *,
+        compress: bool,
+        tool_hook,
+        text_hook,
+        trace: TurnTrace | None,
+    ):
         session_id = self.session_db.get_or_create_session(
             session_key=session_key,
             assistant_id=self.assistant_id,
             platform=platform,
         )
+        slash = try_handle_slash_command(
+            user_message,
+            ctx=SlashCommandContext(
+                session_key=session_key,
+                assistant_id=self.assistant_id,
+                platform=platform,
+                session_db=self.session_db,
+                on_progress=self._progress_callback,
+            ),
+        )
+        if slash and slash.handled:
+            emit_activity(
+                "slash_command",
+                session_key=session_key,
+                assistant_id=self.assistant_id,
+                platform=platform,
+                tool=SESSION_MONITOR_AGENT_ID,
+                detail=user_message[:200],
+            )
+            if slash.rerun_message is None:
+                return ConversationResult(
+                    content=slash.reply,
+                    messages=[],
+                    iterations_used=0,
+                    plain_reply=slash.plain_reply,
+                )
+            user_message = slash.rerun_message
+
         history = [{"role": m["role"], "content": m["content"]} for m in self.session_db.get_messages(session_id)]
 
         if compress:
@@ -246,8 +306,6 @@ class EvoluxAgent:
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)
             self.session_db.append_message(session_id, "assistant", result.content)
-        self._turn_trace = None
-        self._progress_callback = None
         return result
 
     def dispatch_subagent(

@@ -8,6 +8,7 @@ from typing import Any, Callable, Protocol
 
 from agent.tool_calls import parse_tool_call
 from agent.tool_hooks import ToolCallHook, wrap_tool_executor
+from agent.turn_cancel import is_turn_cancelled
 
 
 class LLMCallable(Protocol):
@@ -24,6 +25,7 @@ class ConversationResult:
     messages: list[dict[str, Any]]
     iterations_used: int
     exhausted: bool = False
+    plain_reply: bool = False
 
 
 def run_conversation_loop(
@@ -46,6 +48,14 @@ def run_conversation_loop(
     executor = wrap_tool_executor(tool_executor, tool_hook) if tool_executor else None
 
     while budget.remaining > 0:
+        if is_turn_cancelled():
+            return ConversationResult(
+                content="已停止当前任务。",
+                messages=history,
+                iterations_used=iterations_used,
+                exhausted=False,
+                plain_reply=True,
+            )
         if not budget.consume():
             break
         iterations_used += 1

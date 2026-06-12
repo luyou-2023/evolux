@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
+  "certifi>=2024.2.2",
   "pyyaml==6.0.3",
 ]
 
@@ -41,6 +42,9 @@ testpaths = ["test"]
 pythonpath = ["."]
 timeout = 30
 asyncio_mode = "auto"
+markers = [
+    "live: calls real LLM API (DeepSeek/OpenAI); requires DEEPSEEK_API_KEY",
+]
 
 [tool.ruff]
 line-length = 100

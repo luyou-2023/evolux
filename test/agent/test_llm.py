@@ -26,7 +26,23 @@ def test_llm_call_adapter_exposes_tool_calls():
 def test_create_llm_client_uses_mock_without_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("EVOLUX_API_KEY", raising=False)
-    from agent.llm import create_llm_client
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    from agent.llm import MockLLMClient, create_llm_client
 
-    client = create_llm_client(api_key=None)
+    client = create_llm_client(provider="deepseek", api_key=None)
     assert isinstance(client, MockLLMClient)
+
+
+def test_resolve_api_key_prefers_deepseek_env(monkeypatch):
+    from agent.llm import resolve_api_key
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    assert resolve_api_key("deepseek") == "sk-test"
+
+
+def test_resolve_provider_defaults_deepseek():
+    from agent.llm import resolve_provider_defaults
+
+    model, base_url = resolve_provider_defaults("deepseek")
+    assert model == "deepseek-chat"
+    assert base_url == "https://api.deepseek.com"

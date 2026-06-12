@@ -4,10 +4,24 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
+
+PROVIDER_PRESETS: dict[str, dict[str, str]] = {
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "api_key_env": "OPENAI_API_KEY",
+    },
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "api_key_env": "DEEPSEEK_API_KEY",
+    },
+}
 
 
 @dataclass
@@ -67,7 +81,7 @@ class OpenAICompatibleClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with _urlopen(request, timeout=self.timeout) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -93,6 +107,61 @@ class OpenAICompatibleClient:
         return LLMResponse(content=message.get("content"), tool_calls=tool_calls)
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """Build TLS context; prefer certifi bundle (macOS Python often lacks system CAs)."""
+    if os.environ.get("EVOLUX_SSL_INSECURE", "").lower() in {"1", "true", "yes"}:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def _urlopen(request: urllib.request.Request, timeout: float):
+    """Open URL; default direct connect to avoid broken local HTTPS proxies."""
+    if os.environ.get("EVOLUX_USE_SYSTEM_PROXY", "").lower() in {"1", "true", "yes"}:
+        return urllib.request.urlopen(request, timeout=timeout)
+
+    https_handler = urllib.request.HTTPSHandler(context=_ssl_context())
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), https_handler)
+    return opener.open(request, timeout=timeout)
+
+
+def resolve_provider_defaults(
+    provider: str,
+    *,
+    model: str | None = None,
+    base_url: str | None = None,
+) -> tuple[str, str]:
+    preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS["openai"])
+    return (
+        model or preset["model"],
+        base_url or preset["base_url"],
+    )
+
+
+def resolve_api_key(provider: str, explicit: str | None = None) -> str | None:
+    if explicit:
+        return explicit
+    preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS["openai"])
+    env_names = [preset["api_key_env"], "EVOLUX_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"]
+    seen: set[str] = set()
+    for name in env_names:
+        if name in seen:
+            continue
+        seen.add(name)
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
+
+
 def llm_call_adapter(client: LLMClient) -> Callable[[list[dict[str, Any]]], Any]:
     """Bridge LLMClient to conversation_loop's duck-typed llm_call."""
 
@@ -116,12 +185,14 @@ def llm_call_adapter(client: LLMClient) -> Callable[[list[dict[str, Any]]], Any]
 
 def create_llm_client(
     *,
-    model: str = "gpt-4o-mini",
-    base_url: str = "https://api.openai.com/v1",
+    provider: str = "openai",
+    model: str | None = None,
+    base_url: str | None = None,
     api_key: str | None = None,
-    mock_content: str = "Configure OPENAI_API_KEY or llm.api_key in ~/.evolux/.env for live responses.",
+    mock_content: str = "Configure DEEPSEEK_API_KEY or llm settings in ~/.evolux/.env for live responses.",
 ) -> LLMClient:
-    key = api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("EVOLUX_API_KEY")
+    resolved_model, resolved_base_url = resolve_provider_defaults(provider, model=model, base_url=base_url)
+    key = resolve_api_key(provider, api_key)
     if key:
-        return OpenAICompatibleClient(api_key=key, model=model, base_url=base_url)
+        return OpenAICompatibleClient(api_key=key, model=resolved_model, base_url=resolved_base_url)
     return MockLLMClient(default_content=mock_content)

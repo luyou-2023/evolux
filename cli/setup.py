@@ -27,8 +27,9 @@ routing:
     enable_vector: true
 
 llm:
-  model: gpt-4o-mini
-  base_url: https://api.openai.com/v1
+  provider: deepseek
+  model: deepseek-chat
+  base_url: https://api.deepseek.com
 
 gateway:
   host: 0.0.0.0

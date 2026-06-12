@@ -27,8 +27,9 @@ class CompressionSettings:
 
 @dataclass
 class LLMSettings:
-    model: str = "gpt-4o-mini"
-    base_url: str = "https://api.openai.com/v1"
+    provider: str = "deepseek"
+    model: str = "deepseek-chat"
+    base_url: str = "https://api.deepseek.com"
     api_key: str | None = None
 
 
@@ -89,9 +90,20 @@ def load_settings(home: Path | None = None) -> Settings:
     settings.routing.subagent_top_k = int(routing.get("subagent_top_k", 5))
 
     llm = raw.get("llm", {})
+    provider = str(llm.get("provider", settings.llm.provider))
+    preset_model = settings.llm.model
+    preset_base = settings.llm.base_url
+    if provider == "openai":
+        preset_model = "gpt-4o-mini"
+        preset_base = "https://api.openai.com/v1"
+    elif provider == "deepseek":
+        preset_model = "deepseek-chat"
+        preset_base = "https://api.deepseek.com"
+
     settings.llm = LLMSettings(
-        model=str(llm.get("model", settings.llm.model)),
-        base_url=str(llm.get("base_url", settings.llm.base_url)),
+        provider=provider,
+        model=str(llm.get("model", preset_model)),
+        base_url=str(llm.get("base_url", preset_base)),
         api_key=llm.get("api_key"),
     )
 

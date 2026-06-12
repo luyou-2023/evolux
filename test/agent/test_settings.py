@@ -17,7 +17,8 @@ compression:
 gateway:
   port: 9999
 llm:
-  model: test-model
+  provider: deepseek
+  model: deepseek-chat
 """.strip(),
         encoding="utf-8",
     )
@@ -25,4 +26,5 @@ llm:
     assert settings.orchestrator_max_iterations == 25
     assert settings.compression.keep_recent_turns == 8
     assert settings.gateway.port == 9999
-    assert settings.llm.model == "test-model"
+    assert settings.llm.provider == "deepseek"
+    assert settings.llm.model == "deepseek-chat"

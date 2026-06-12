@@ -22,6 +22,7 @@ def create_llm_call(home: Path | None = None, settings: Settings | None = None) 
     load_env(base)
     cfg = settings or load_settings(base)
     client = create_llm_client(
+        provider=cfg.llm.provider,
         model=cfg.llm.model,
         base_url=cfg.llm.base_url,
         api_key=cfg.llm.api_key,

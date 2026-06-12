@@ -57,7 +57,7 @@ class EvoluxAgent:
             backend=vector_backend,
         )
         self.memory_manager = MemoryManager(home=self.home, assistant_id=assistant_id)
-        self.mcp_manager = MCPManager(home=self.home, settings=self.settings)
+        self.mcp_manager = MCPManager(home=self.home, settings=self.settings, llm_call=llm_call)
         from mcp.registry_bridge import sync_mcp_tools
 
         sync_mcp_tools(self.mcp_manager)

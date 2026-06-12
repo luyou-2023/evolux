@@ -77,10 +77,17 @@ class EvoluxACPAgent:
         return LoadSessionResponse()
 
     async def list_sessions(self, cursor: str | None = None, cwd: str | None = None, **kwargs: Any) -> ListSessionsResponse:
-        sessions = [
-            SessionInfo(session_id=sid, cwd=state.cwd, title=f"Evolux {sid[:8]}")
-            for sid, state in self.session_manager._sessions.items()
-        ]
+        sessions = []
+        for session_id in self.session_manager.list_session_ids():
+            state = self.session_manager.get_session(session_id) or self.session_manager.load_session(
+                session_id,
+                cwd=cwd or str(self.session_manager.base),
+            )
+            if state is None:
+                continue
+            sessions.append(
+                SessionInfo(session_id=session_id, cwd=state.cwd, title=f"Evolux {session_id[:8]}")
+            )
         return ListSessionsResponse(sessions=sessions)
 
     async def set_session_mode(self, mode_id: str, session_id: str, **kwargs: Any) -> SetSessionModeResponse | None:
@@ -135,14 +142,25 @@ class EvoluxACPAgent:
     async def fork_session(
         self, cwd: str, session_id: str, mcp_servers: list | None = None, **kwargs: Any
     ) -> ForkSessionResponse:
-        state = self.session_manager.create_session(cwd=cwd)
+        state = self.session_manager.fork_session(
+            session_id,
+            cwd=cwd,
+            mcp_servers=mcp_servers,
+        )
+        if state is None:
+            state = self.session_manager.create_session(cwd=cwd, mcp_servers=mcp_servers)
         return ForkSessionResponse(session_id=state.session_id)
 
     async def resume_session(
         self, cwd: str, session_id: str, mcp_servers: list | None = None, **kwargs: Any
     ) -> ResumeSessionResponse:
-        if not self.session_manager.get_session(session_id):
-            state = self.session_manager.create_session(cwd=cwd)
+        state = self.session_manager.resume_session(
+            session_id,
+            cwd=cwd,
+            mcp_servers=mcp_servers,
+        )
+        if state is None:
+            state = self.session_manager.create_session(cwd=cwd, mcp_servers=mcp_servers)
             session_id = state.session_id
         return ResumeSessionResponse(session_id=session_id)
 

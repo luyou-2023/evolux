@@ -24,6 +24,7 @@
 | Phase 5 Skills / MCP 集成 / Cron | ✅ 完成 |
 | Hermes 对齐（tools/skills/MCP/ACP） | ✅ 完成 |
 | Hermes 缺口补全（MCP HTTP / ACP session / clarify） | ✅ 完成 |
+| Hermes 缺口补全（MCP sampling / ACP fork-resume） | ✅ 完成 |
 | Phase 6 Feishu 工具 / ACP 进度流 | ✅ 完成 |
 | Phase 7 SQLite 向量 / LLM 流式 / CI | ✅ 完成 |
 | Phase 8 LLM tools 接线 / Sub-agent MCP 子集 | ✅ 完成 |

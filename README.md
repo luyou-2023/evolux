@@ -84,7 +84,7 @@ When `app_id` and `app_secret` are configured, Evolux automatically sends the or
 - `cron.jobs` — scheduled orchestrator prompts
 - `vector.embedding` — `hash` (default) or `openai`
 - `vector.backend` — `sqlite-vec` (default), `sqlite`, or `json`
-- `evolux acp start --check` — validate editor tool wiring (Hermes-compatible)
+- `mcp.sampling.enabled` / `max_tool_rounds` — MCP server agent-in-the-loop LLM requests
 - `assistants.<id>.routing.fusion` — per-assistant fusion weights
 
 ### Hermes-aligned surface

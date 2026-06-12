@@ -6,6 +6,18 @@ from acp_adapter.server import EvoluxACPAgent
 
 
 @pytest.mark.asyncio
+async def test_acp_fork_session_endpoint(evolux_home, monkeypatch):
+    monkeypatch.setattr("acp_adapter.session.get_evolux_home", lambda: evolux_home)
+    monkeypatch.setattr("agent.runtime.get_evolux_home", lambda: evolux_home)
+    agent = EvoluxACPAgent()
+    parent = await agent.new_session(cwd=str(evolux_home))
+    forked = await agent.fork_session(cwd=str(evolux_home), session_id=parent.session_id)
+    assert forked.session_id != parent.session_id
+    await agent.close_session(parent.session_id)
+    await agent.close_session(forked.session_id)
+
+
+@pytest.mark.asyncio
 async def test_acp_load_session_endpoint(evolux_home, monkeypatch):
     monkeypatch.setattr("acp_adapter.session.get_evolux_home", lambda: evolux_home)
     monkeypatch.setattr("agent.runtime.get_evolux_home", lambda: evolux_home)

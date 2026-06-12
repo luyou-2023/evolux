@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from agent.settings import Settings, load_settings
+from agent.settings import MCPSamplingSettings, Settings, load_settings
 from evolux_constants import get_evolux_home
 from mcp.http_client import MCPHTTPClient, MCPHTTPError
+from mcp.sampling import MCPSamplingConfig, MCPSamplingHandler
 from mcp.stdio_client import MCPStdioClient, MCPStdioError
 
 logger = logging.getLogger("evolux.mcp")
@@ -27,11 +28,29 @@ class MCPServerConfig:
 class MCPManager:
     """Load MCP configs lazily; connect stdio or HTTP clients on first discovery."""
 
-    def __init__(self, home: Path | None = None, settings: Settings | None = None):
+    def __init__(
+        self,
+        home: Path | None = None,
+        settings: Settings | None = None,
+        llm_call: Callable[..., Any] | None = None,
+    ):
         self.home = home or get_evolux_home()
         self.settings = settings or load_settings(self.home)
+        self.llm_call = llm_call
         self._discovered: dict[str, list[dict[str, Any]]] = {}
         self._clients: dict[str, MCPStdioClient | MCPHTTPClient] = {}
+        self._sampling_handlers: dict[str, MCPSamplingHandler] = {}
+
+    def get_mcp_status(self) -> dict[str, Any]:
+        """Return sampling audit metrics per MCP server."""
+        status: dict[str, Any] = {}
+        for name, handler in self._sampling_handlers.items():
+            status[name] = {
+                "requests": handler.stats.requests,
+                "errors": handler.stats.errors,
+                "tool_rounds": handler.stats.tool_rounds,
+            }
+        return status
 
     def list_servers(self) -> list[MCPServerConfig]:
         servers = []
@@ -144,8 +163,40 @@ class MCPManager:
 
     def _get_or_create_stdio_client(self, server_name: str, command: str, args: list[str]) -> MCPStdioClient:
         if server_name not in self._clients:
-            self._clients[server_name] = MCPStdioClient(command, args)
+            handler = self._sampling_handler_for(server_name)
+            if handler:
+                self._sampling_handlers[server_name] = handler
+            self._clients[server_name] = MCPStdioClient(
+                command,
+                args,
+                sampling_handler=handler,
+            )
         return self._clients[server_name]
+
+    def _sampling_handler_for(self, server_name: str) -> MCPSamplingHandler | None:
+        config = self._server_sampling_config(server_name)
+        if not config.enabled or not self.llm_call:
+            return None
+        return MCPSamplingHandler(
+            self.llm_call,
+            config=config,
+            model=self.settings.llm.model,
+        )
+
+    def _server_sampling_config(self, server_name: str) -> MCPSamplingConfig:
+        raw = self.settings.mcp.servers.get(server_name, {})
+        sampling = raw.get("sampling") if isinstance(raw, dict) else None
+        if isinstance(sampling, dict):
+            return MCPSamplingConfig(
+                enabled=bool(sampling.get("enabled", self.settings.mcp.sampling.enabled)),
+                max_tool_rounds=int(
+                    sampling.get("max_tool_rounds", self.settings.mcp.sampling.max_tool_rounds)
+                ),
+            )
+        return MCPSamplingConfig(
+            enabled=self.settings.mcp.sampling.enabled,
+            max_tool_rounds=self.settings.mcp.sampling.max_tool_rounds,
+        )
 
     def _get_or_create_http_client(self, server_name: str, url: str) -> MCPHTTPClient:
         if server_name not in self._clients:

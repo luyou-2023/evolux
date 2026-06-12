@@ -43,8 +43,15 @@ class GatewaySettings:
 
 
 @dataclass
+class MCPSamplingSettings:
+    enabled: bool = True
+    max_tool_rounds: int = 3
+
+
+@dataclass
 class MCPSettings:
     servers: dict[str, dict] = field(default_factory=dict)
+    sampling: MCPSamplingSettings = field(default_factory=MCPSamplingSettings)
 
 
 @dataclass
@@ -135,6 +142,17 @@ def load_settings(home: Path | None = None) -> Settings:
     mcp = raw.get("mcp_servers", {})
     if isinstance(mcp, dict):
         settings.mcp.servers = {str(k): dict(v or {}) for k, v in mcp.items()}
+
+    mcp_root = raw.get("mcp", {})
+    if isinstance(mcp_root, dict):
+        sampling = mcp_root.get("sampling", {})
+        if isinstance(sampling, dict):
+            settings.mcp.sampling = MCPSamplingSettings(
+                enabled=bool(sampling.get("enabled", settings.mcp.sampling.enabled)),
+                max_tool_rounds=int(
+                    sampling.get("max_tool_rounds", settings.mcp.sampling.max_tool_rounds)
+                ),
+            )
 
     vector = raw.get("vector", {})
     if isinstance(vector, dict):

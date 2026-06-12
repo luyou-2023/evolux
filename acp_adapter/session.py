@@ -65,6 +65,41 @@ class AcpSessionManager:
         self._sessions[session_id] = state
         return state
 
+    def fork_session(
+        self,
+        parent_session_id: str,
+        *,
+        cwd: str,
+        mcp_servers: list[Any] | None = None,
+    ) -> AcpSessionState | None:
+        parent = self.get_session(parent_session_id) or self.load_session(
+            parent_session_id,
+            cwd=cwd,
+            mcp_servers=mcp_servers,
+        )
+        if parent is None:
+            return None
+
+        child_id = str(uuid.uuid4())
+        child = self._build_session(session_id=child_id, cwd=cwd, mcp_servers=mcp_servers)
+        self._copy_session_history(parent, child)
+        self._sessions[child_id] = child
+        self._persist_index()
+        return child
+
+    def resume_session(
+        self,
+        session_id: str,
+        *,
+        cwd: str,
+        mcp_servers: list[Any] | None = None,
+    ) -> AcpSessionState | None:
+        return self.load_session(session_id, cwd=cwd, mcp_servers=mcp_servers)
+
+    def list_session_ids(self) -> list[str]:
+        ids = set(self._read_index().keys()) | set(self._sessions.keys())
+        return sorted(ids)
+
     def get_session(self, session_id: str) -> AcpSessionState | None:
         return self._sessions.get(session_id)
 
@@ -103,6 +138,24 @@ class AcpSessionManager:
             session_key=resolved_key,
             agent=agent,
         )
+
+    def _copy_session_history(self, parent: AcpSessionState, child: AcpSessionState) -> None:
+        parent_db = parent.agent.session_db
+        parent_session_id = parent_db.get_session_id_by_key(parent.session_key)
+        if not parent_session_id:
+            return
+        messages = parent_db.get_messages(parent_session_id)
+        child_session_id = child.agent.session_db.get_or_create_session(
+            session_key=child.session_key,
+            assistant_id=child.agent.assistant_id,
+            platform="acp",
+        )
+        for message in messages:
+            child.agent.session_db.append_message(
+                child_session_id,
+                message["role"],
+                message["content"],
+            )
 
     def _read_index(self) -> dict[str, dict[str, str]]:
         if not self._index_path.exists():

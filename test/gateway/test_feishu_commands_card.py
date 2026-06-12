@@ -7,3 +7,4 @@ def test_build_feishu_commands_card():
     content = str(card["elements"])
     assert "/stop" in content
     assert "/skills browse" in content
+    assert "/resume" in content

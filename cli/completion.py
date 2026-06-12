@@ -44,6 +44,7 @@ _evolux() {{
         '--assistant[Assistant id]:assistant:({assistant_words})' \\
         '--once[Single turn message]:message:' \\
         '--trace[Show orchestration trace on stderr]'
+      _message -e 'Use /help and Tab completion for slash commands in chat'
       ;;
     skills)
       subcmds=(list reindex install)

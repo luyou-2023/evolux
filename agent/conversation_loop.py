@@ -27,6 +27,7 @@ class ConversationResult:
     exhausted: bool = False
     plain_reply: bool = False
     interactive_card: dict | None = None
+    switch_session_key: str | None = None
 
 
 def run_conversation_loop(

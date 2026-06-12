@@ -228,6 +228,7 @@ class EvoluxAgent:
                     iterations_used=0,
                     plain_reply=slash.plain_reply,
                     interactive_card=slash.interactive_card,
+                    switch_session_key=slash.switch_session_key,
                 )
             user_message = slash.rerun_message
 

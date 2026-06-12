@@ -221,5 +221,51 @@ class SessionDB:
         rows = self._conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def find_sessions_by_title(
+        self,
+        assistant_id: str,
+        query: str,
+        *,
+        platform: str | None = None,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        pattern = f"%{query.strip()}%"
+        sql = """
+            SELECT session_id, session_key, assistant_id, platform, title, created_at,
+                   (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.session_id) AS message_count
+            FROM sessions s
+            WHERE assistant_id = ? AND title != '' AND title LIKE ?
+        """
+        params: list[Any] = [assistant_id, pattern]
+        if platform:
+            sql += " AND platform = ?"
+            params.append(platform)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_titled_sessions(
+        self,
+        assistant_id: str,
+        *,
+        platform: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT session_id, session_key, assistant_id, platform, title, created_at,
+                   (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.session_id) AS message_count
+            FROM sessions s
+            WHERE assistant_id = ? AND title != ''
+        """
+        params: list[Any] = [assistant_id]
+        if platform:
+            sql += " AND platform = ?"
+            params.append(platform)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     def close(self) -> None:
         self._conn.close()

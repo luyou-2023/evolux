@@ -125,7 +125,7 @@ def build_clarify_selected_card(*, question: str, option: str) -> dict[str, Any]
 def build_feishu_commands_card() -> dict[str, Any]:
     """Interactive card listing Hermes-compatible slash commands for Feishu users."""
     command_lines = [
-        ("会话", ["/new", "/stop", "/status", "/sessions", "/title", "/history", "/compress", "/retry", "/undo"]),
+        ("会话", ["/new", "/stop", "/status", "/sessions", "/title", "/resume", "/history", "/compress", "/retry", "/undo"]),
         ("信息", ["/help", "/commands", "/model", "/tools", "/skills browse"]),
     ]
     elements: list[dict[str, Any]] = [

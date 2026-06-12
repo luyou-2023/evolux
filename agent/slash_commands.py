@@ -37,6 +37,7 @@ class SlashCommandOutcome:
     rerun_message: str | None = None
     plain_reply: bool = True
     interactive_card: dict[str, Any] | None = None
+    switch_session_key: str | None = None
 
 
 def parse_slash_command(text: str) -> tuple[str, str] | None:
@@ -97,6 +98,7 @@ def _cmd_help(_ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
         "/commands — 命令参考（飞书发送交互卡片）",
         "/new, /reset, /clear — 重置当前会话",
         "/title [名称] — 查看或设置会话标题",
+        "/resume [标题] — 按标题恢复会话（CLI 可切换）",
         "/stop — 中断正在运行的 Agent 轮次",
         "/status — 显示会话与模型信息",
         "/sessions — 列出最近会话",
@@ -292,6 +294,85 @@ def _cmd_commands(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
     return _cmd_help(ctx, "")
 
 
+def _format_session_line(item: dict[str, Any], *, current_key: str) -> str:
+    title = str(item.get("title") or "").strip()
+    key = str(item.get("session_key") or "")
+    platform = str(item.get("platform") or "")
+    count = item.get("message_count", 0)
+    marker = " ← 当前" if key == current_key else ""
+    return f"• **{title}** · {platform} · {count} msgs{marker}"
+
+
+def _cmd_resume(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    query = args.strip()
+    if not query:
+        items = ctx.session_db.list_titled_sessions(
+            ctx.assistant_id,
+            platform="cli" if ctx.platform == "cli" else None,
+            limit=8,
+        )
+        if not items:
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 没有已命名会话。先用 /title 命名，或 /resume 标题 恢复。",
+            )
+        lines = [f"{MONITOR_PREFIX} · 已命名会话（/resume 标题）："]
+        lines.extend(_format_session_line(item, current_key=ctx.session_key) for item in items)
+        return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+    matches = ctx.session_db.find_sessions_by_title(ctx.assistant_id, query, limit=8)
+    if not matches:
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 未找到标题匹配「{query}」的会话。",
+        )
+
+    if ctx.platform == "cli":
+        cli_matches = [item for item in matches if item.get("platform") == "cli"]
+        if not cli_matches:
+            only = matches[0]
+            return SlashCommandOutcome(
+                handled=True,
+                reply=(
+                    f"{MONITOR_PREFIX} · 找到「{only.get('title')}」，但属于 "
+                    f"{only.get('platform')} 平台，请在对应渠道继续。"
+                ),
+            )
+        if len(cli_matches) > 1:
+            lines = [f"{MONITOR_PREFIX} · 多个 CLI 会话匹配「{query}」："]
+            lines.extend(_format_session_line(item, current_key=ctx.session_key) for item in cli_matches)
+            lines.append("请使用更精确的标题。")
+            return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+        target = cli_matches[0]
+        target_key = str(target.get("session_key") or "")
+        title = str(target.get("title") or query)
+        if target_key == ctx.session_key:
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 已在会话「{title}」。",
+            )
+        count = target.get("message_count", 0)
+        message = f"{MONITOR_PREFIX} · 已切换到会话「{title}」（{count} 条消息）。"
+        _notify(ctx, message)
+        return SlashCommandOutcome(
+            handled=True,
+            reply=message,
+            switch_session_key=target_key,
+        )
+
+    same_platform = [item for item in matches if item.get("platform") == ctx.platform]
+    if len(same_platform) == 1 and str(same_platform[0].get("session_key")) == ctx.session_key:
+        title = str(same_platform[0].get("title") or query)
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 已在会话「{title}」。",
+        )
+    lines = [f"{MONITOR_PREFIX} · 匹配「{query}」的会话："]
+    lines.extend(_format_session_line(item, current_key=ctx.session_key) for item in matches[:5])
+    lines.append("当前渠道无法切换会话，请在对应平台继续。")
+    return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+
 def _cmd_model(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
     if ctx.settings is None:
         return SlashCommandOutcome(
@@ -350,6 +431,7 @@ _HANDLERS = {
     "status": _cmd_status,
     "sessions": _cmd_sessions,
     "title": _cmd_title,
+    "resume": _cmd_resume,
     "skills": _cmd_skills,
     "history": _cmd_history,
     "compress": _cmd_compress,

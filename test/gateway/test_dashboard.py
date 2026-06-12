@@ -28,6 +28,7 @@ async def test_dashboard_session_detail(evolux_home):
     db = SessionDB(home=evolux_home)
     session_key = "orchestrator:default:cli:dm:test"
     session_id = db.get_or_create_session(session_key, "default", "cli")
+    db.set_session_title(session_key, "Dashboard Test")
     db.append_message(session_id, "user", "hello dashboard")
     db.append_message(session_id, "assistant", "hi there")
     db.close()
@@ -44,4 +45,5 @@ async def test_dashboard_session_detail(evolux_home):
         text = await resp.text()
         assert "hello dashboard" in text
         assert "hi there" in text
+        assert "Dashboard Test" in text
     runner.shutdown()

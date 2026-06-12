@@ -7,6 +7,7 @@ from pathlib import Path
 
 from agent.runtime import bootstrap, create_llm_call
 from agent.turn_trace import TurnTrace
+from cli.chat_completion import install_slash_completer
 from cli.trace_render import render_trace
 from evolux_constants import get_evolux_home
 from evolux_logging import setup_logging
@@ -64,6 +65,8 @@ def run_chat(
     _, agent, session_key, progress_callback = _build_chat_agent(home, assistant_id)
 
     print(f"Evolux chat (assistant={assistant_id}). Type /exit to quit.")
+    if install_slash_completer():
+        print("Tip: Tab completes /slash commands.", file=sys.stderr)
     if trace:
         print("Trace mode: orchestration steps print to stderr.", file=sys.stderr)
     elif progress_callback:
@@ -89,6 +92,11 @@ def run_chat(
         )
         if turn_trace:
             render_trace(turn_trace)
+        if getattr(result, "switch_session_key", None):
+            session_key = result.switch_session_key
+            print(f"bot> {result.content or '(no response)'}")
+            print(f"[session → {session_key}]", file=sys.stderr)
+            continue
         print(f"bot> {result.content or '(no response)'}")
 
     agent.close()

@@ -62,3 +62,42 @@ def test_slash_commands_returns_feishu_card(evolux_home):
     )
     assert outcome and outcome.interactive_card is not None
     assert outcome.interactive_card["header"]["title"]["content"] == "Evolux 命令参考"
+
+
+def test_slash_resume_switches_cli_session(evolux_home):
+    db = SessionDB(home=evolux_home)
+    key_a = "orchestrator:default:cli:dm:local"
+    key_b = "orchestrator:default:cli:dm:project"
+    db.get_or_create_session(key_a, "default", "cli")
+    sid_b = db.get_or_create_session(key_b, "default", "cli")
+    db.set_session_title(key_b, "My Project")
+    db.append_message(sid_b, "user", "prior work")
+
+    outcome = try_handle_slash_command(
+        "/resume My Project",
+        ctx=SlashCommandContext(
+            session_key=key_a,
+            assistant_id="default",
+            platform="cli",
+            session_db=db,
+        ),
+    )
+    assert outcome and outcome.switch_session_key == key_b
+    assert "My Project" in (outcome.reply or "")
+
+
+def test_slash_resume_lists_titled_sessions(evolux_home):
+    db = SessionDB(home=evolux_home)
+    key = "orchestrator:default:cli:dm:n1"
+    db.get_or_create_session(key, "default", "cli")
+    db.set_session_title(key, "Named One")
+    outcome = try_handle_slash_command(
+        "/resume",
+        ctx=SlashCommandContext(
+            session_key=key,
+            assistant_id="default",
+            platform="cli",
+            session_db=db,
+        ),
+    )
+    assert outcome and "Named One" in (outcome.reply or "")

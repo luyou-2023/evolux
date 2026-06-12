@@ -120,6 +120,8 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
         if not session_id:
             db.close()
             return web.Response(text=_page("Not Found", "<h1>Session not found</h1>"), status=404, content_type="text/html")
+        row = db.get_session_row(session_key) or {}
+        title = str(row.get("title") or "").strip()
         messages = db.get_messages(session_id)
         db.close()
         blocks = []
@@ -128,8 +130,12 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
                 f'<div class="msg"><div class="role">{html.escape(msg["role"])}</div>'
                 f'<div>{html.escape(msg["content"])}</div></div>'
             )
+        title_line = (
+            f'<p><strong>Title:</strong> {html.escape(title)}</p>' if title else ""
+        )
         body = f"""
         <h1>Session</h1>
+        {title_line}
         <p><code>{html.escape(session_key)}</code></p>
         {''.join(blocks) or '<p>No messages yet.</p>'}
         """
@@ -234,11 +240,13 @@ def _sessions_table(sessions: list[dict], *, link_sessions: bool = False) -> str
     rows = []
     for item in sessions:
         key = str(item.get("session_key", ""))
+        title = str(item.get("title") or "").strip()
         key_cell = html.escape(key)
         if link_sessions:
             key_cell = f'<a href="/dashboard/sessions/{quote(key, safe="")}">{key_cell}</a>'
         rows.append(
-            f"<tr><td>{key_cell}</td>"
+            f"<tr><td>{html.escape(title or '—')}</td>"
+            f"<td>{key_cell}</td>"
             f"<td>{html.escape(str(item.get('assistant_id', '')))}</td>"
             f"<td>{html.escape(str(item.get('platform', '')))}</td>"
             f"<td>{item.get('message_count', 0)}</td>"
@@ -246,7 +254,7 @@ def _sessions_table(sessions: list[dict], *, link_sessions: bool = False) -> str
         )
     return f"""
     <table>
-      <thead><tr><th>Session Key</th><th>Assistant</th><th>Platform</th><th>Messages</th><th>Created</th></tr></thead>
-      <tbody>{''.join(rows) or '<tr><td colspan="5">No sessions</td></tr>'}</tbody>
+      <thead><tr><th>Title</th><th>Session Key</th><th>Assistant</th><th>Platform</th><th>Messages</th><th>Created</th></tr></thead>
+      <tbody>{''.join(rows) or '<tr><td colspan="6">No sessions</td></tr>'}</tbody>
     </table>
     """

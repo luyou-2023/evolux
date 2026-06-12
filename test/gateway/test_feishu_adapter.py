@@ -64,6 +64,7 @@ def test_parse_feishu_card_action_trigger():
     event = parse_feishu_webhook(payload, assistant_id="work-bot")
     assert event.is_card_action is True
     assert event.card_action_option == "evolux"
+    assert event.card_action_question == "Which repo?"
     assert event.text == "[确认] Which repo? → evolux"
     assert event.source.chat_id == "oc_card"
     assert event.source.user_id == "ou_card"
@@ -74,6 +75,13 @@ def test_build_card_action_ack():
     ack = build_card_action_ack("已选择：evolux")
     assert ack["toast"]["type"] == "success"
     assert ack["toast"]["content"] == "已选择：evolux"
+
+
+def test_build_card_action_ack_with_card():
+    card = {"header": {"title": {"content": "已确认"}}}
+    ack = build_card_action_ack("ok", card=card)
+    assert ack["card"]["type"] == "raw"
+    assert ack["card"]["data"] == card
 
 
 def test_verify_feishu_signature():

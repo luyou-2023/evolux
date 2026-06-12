@@ -66,13 +66,22 @@ class GatewayRunner:
 
     def handle_message_sync(self, event: MessageEvent) -> GatewayResponse:
         session_key = build_session_key(event.assistant_id, event.source)
-        emit_activity(
-            "message_received",
-            session_key=session_key,
-            assistant_id=event.assistant_id,
-            platform=event.source.platform,
-            detail=event.text[:200],
-        )
+        if event.is_card_action:
+            emit_activity(
+                "card_action_received",
+                session_key=session_key,
+                assistant_id=event.assistant_id,
+                platform=event.source.platform,
+                detail=event.card_action_option or event.text[:200],
+            )
+        else:
+            emit_activity(
+                "message_received",
+                session_key=session_key,
+                assistant_id=event.assistant_id,
+                platform=event.source.platform,
+                detail=event.text[:200],
+            )
         agent = self._get_agent(event.assistant_id)
         trace = TurnTrace()
         result = agent.run_orchestrator_turn(

@@ -10,6 +10,7 @@ from typing import Callable
 
 from gateway.dashboard import register_dashboard_routes
 from gateway.platforms.feishu import build_card_action_ack, parse_feishu_webhook, verify_feishu_signature
+from gateway.platforms.feishu_format import build_clarify_selected_card
 from gateway.run import GatewayRunner
 
 logger = logging.getLogger("evolux.gateway.webhook")
@@ -65,7 +66,13 @@ def create_gateway_app(
         if parsed.is_card_action:
             option = parsed.card_action_option
             toast = f"已选择：{option}" if option else "已收到您的选择"
-            return web.json_response(build_card_action_ack(toast))
+            selected_card = None
+            if option:
+                selected_card = build_clarify_selected_card(
+                    question=parsed.card_action_question or "",
+                    option=option,
+                )
+            return web.json_response(build_card_action_ack(toast, card=selected_card))
 
         return web.json_response(
             {

@@ -43,6 +43,7 @@ def _page(title: str, body: str) -> str:
     .feed {{ max-height: 70vh; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 0.5rem; background: #fafafa; }}
     .event {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; padding: 0.45rem 0.6rem; border-bottom: 1px solid #eee; }}
     .event-kind {{ color: #7c3aed; font-weight: 600; }}
+    .event-kind-card {{ color: #059669; }}
     .event-meta {{ color: #6b7280; font-size: 0.8rem; }}
     .status {{ color: #059669; font-size: 0.9rem; margin-bottom: 0.75rem; }}
   </style>
@@ -159,11 +160,12 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
             const item = document.createElement("div");
             item.className = "event";
             const kind = document.createElement("span");
-            kind.className = "event-kind";
+            kind.className = "event-kind" + (raw.kind === "card_action_received" ? " event-kind-card" : "");
             kind.textContent = raw.kind || "event";
             const meta = document.createElement("div");
             meta.className = "event-meta";
             const parts = [];
+            if (raw.platform) parts.push(raw.platform);
             if (raw.session_key) parts.push(raw.session_key);
             if (raw.tool) parts.push("tool=" + raw.tool);
             if (raw.detail) parts.push(raw.detail);

@@ -57,9 +57,17 @@ def parse_feishu_webhook(payload: dict[str, Any], *, assistant_id: str) -> Messa
     )
 
 
-def build_card_action_ack(content: str = "已收到您的选择", *, toast_type: str = "success") -> dict[str, Any]:
+def build_card_action_ack(
+    content: str = "已收到您的选择",
+    *,
+    toast_type: str = "success",
+    card: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Feishu card.action.trigger webhook response body."""
-    return {"toast": {"type": toast_type, "content": content}}
+    body: dict[str, Any] = {"toast": {"type": toast_type, "content": content}}
+    if card is not None:
+        body["card"] = {"type": "raw", "data": card}
+    return body
 
 
 def build_feishu_text_reply(chat_id: str, text: str) -> dict[str, Any]:
@@ -124,6 +132,7 @@ def _parse_card_action_trigger(
         message_id=str(context.get("open_message_id") or "") or None,
         is_card_action=True,
         card_action_option=option or None,
+        card_action_question=question or None,
         raw=payload,
     )
 

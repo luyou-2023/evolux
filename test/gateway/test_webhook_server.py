@@ -59,6 +59,8 @@ async def test_webhook_server_handles_feishu_card_action(evolux_home):
         body = await resp.json()
         assert body["toast"]["type"] == "success"
         assert "evolux" in body["toast"]["content"]
+        assert body["card"]["type"] == "raw"
+        assert "evolux" in str(body["card"]["data"])
 
     runner.shutdown()
 

@@ -105,6 +105,23 @@ def build_feishu_clarify_card(clarify: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_clarify_selected_card(*, question: str, option: str) -> dict[str, Any]:
+    """Card body returned after user clicks a clarify option (replaces interactive buttons)."""
+    q = question.strip() or "确认"
+    label = option.strip() or "已选择"
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "green",
+            "title": {"tag": "plain_text", "content": "已确认"},
+        },
+        "elements": [
+            {"tag": "div", "text": {"tag": "lark_md", "content": f"**{q}**"}},
+            {"tag": "div", "text": {"tag": "lark_md", "content": f"✅ 您选择了：**{label}**"}},
+        ],
+    }
+
+
 def build_feishu_post_reply(chat_id: str, *, answer: str, trace: TurnTrace | None = None) -> dict[str, Any]:
     return {
         "receive_id": chat_id,

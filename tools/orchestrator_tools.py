@@ -78,6 +78,22 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
             ctx.subagent_index.sync_agent(retired)
         return json.dumps({"retired": agent_id}, ensure_ascii=False)
 
+    if name == "clarify":
+        question = str(arguments.get("question", "")).strip()
+        if not question:
+            return json.dumps({"error": "question is required"}, ensure_ascii=False)
+        options = arguments.get("options") or []
+        if not isinstance(options, list):
+            options = []
+        return json.dumps(
+            {
+                "clarify": True,
+                "question": question,
+                "options": [str(item) for item in options],
+            },
+            ensure_ascii=False,
+        )
+
     return json.dumps({"error": f"unknown tool: {name}"})
 
 
@@ -142,6 +158,18 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {"agent_id": {"type": "string"}},
             "required": ["agent_id"],
+        },
+    },
+    "clarify": {
+        "name": "clarify",
+        "description": "Ask the user a clarifying question when requirements are underspecified.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "options": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["question"],
         },
     },
 }

@@ -92,9 +92,9 @@ When `app_id` and `app_secret` are configured, Evolux automatically sends the or
 | Area | Evolux | Hermes parity |
 |------|--------|---------------|
 | Tools | `skills_list`, `skill_view`, `memory`, `session_search`, `read_file`, `write_file`, `todo` | same names + toolsets |
-| MCP | `mcp_{server}_{tool}` registered in central registry | same prefix |
+| MCP | `mcp_{server}_{tool}` registered in central registry; stdio + HTTP transport | same prefix |
 | Skills | bundled `native-mcp`, `github-auth`, `plan`, `git` | copied from Hermes catalog |
-| ACP | `evolux acp start --check`, `hermes-acp` toolset alias | adapter skeleton |
+| ACP | `evolux acp start`, session persistence, MCP passthrough, tool progress | Hermes-compatible |
 
 Secrets: `~/.evolux/.env` (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`)
 

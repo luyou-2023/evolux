@@ -23,6 +23,7 @@ TOOL_KIND_MAP: dict[str, ToolKind] = {
     "create_subagent": "execute",
     "dispatch_subagent": "execute",
     "retire_subagent": "execute",
+    "clarify": "other",
     "feishu_message": "other",
     "feishu_doc_read": "read",
     "feishu_doc_create": "edit",

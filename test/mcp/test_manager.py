@@ -60,11 +60,21 @@ mcp_servers:
     manager.close()
 
 
-def test_mcp_manager_http_server_returns_empty(evolux_home):
-    (evolux_home / "config.yaml").write_text(
-        "mcp_servers:\n  db:\n    url: http://localhost:8080\n",
-        encoding="utf-8",
-    )
-    manager = MCPManager(home=evolux_home)
-    tools = manager.discover_tools("db")
-    assert tools == []
+def test_mcp_manager_discovers_http_tools(evolux_home):
+    from test.fixtures.minimal_mcp_http_server import start_server
+
+    url, stop = start_server()
+    try:
+        (evolux_home / "config.yaml").write_text(
+            f"mcp_servers:\n  echo:\n    url: {url}\n",
+            encoding="utf-8",
+        )
+        manager = MCPManager(home=evolux_home)
+        tools = manager.discover_tools("echo")
+        assert len(tools) == 1
+        assert tools[0]["name"] == "mcp_echo_echo"
+        result = manager.call_tool("echo", "echo", {"text": "http"})
+        assert result["content"][0]["text"] == "echo:http"
+        manager.close()
+    finally:
+        stop()

@@ -1,4 +1,4 @@
-"""Lazy MCP server configuration and stdio discovery."""
+"""Lazy MCP server configuration and stdio/HTTP discovery."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 
 from agent.settings import Settings, load_settings
 from evolux_constants import get_evolux_home
+from mcp.http_client import MCPHTTPClient, MCPHTTPError
 from mcp.stdio_client import MCPStdioClient, MCPStdioError
 
 logger = logging.getLogger("evolux.mcp")
@@ -24,13 +25,13 @@ class MCPServerConfig:
 
 
 class MCPManager:
-    """Load MCP configs lazily; spawn stdio clients on first discovery."""
+    """Load MCP configs lazily; connect stdio or HTTP clients on first discovery."""
 
     def __init__(self, home: Path | None = None, settings: Settings | None = None):
         self.home = home or get_evolux_home()
         self.settings = settings or load_settings(self.home)
         self._discovered: dict[str, list[dict[str, Any]]] = {}
-        self._clients: dict[str, MCPStdioClient] = {}
+        self._clients: dict[str, MCPStdioClient | MCPHTTPClient] = {}
 
     def list_servers(self) -> list[MCPServerConfig]:
         servers = []
@@ -48,6 +49,15 @@ class MCPManager:
             )
         return servers
 
+    def register_server(self, name: str, config: dict[str, Any], *, rediscover: bool = True) -> None:
+        """Register or override an MCP server at runtime (e.g. ACP session servers)."""
+        self.settings.mcp.servers[name] = dict(config)
+        if rediscover:
+            self._discovered.pop(name, None)
+            client = self._clients.pop(name, None)
+            if client:
+                client.close()
+
     def discover_tools(self, server_name: str) -> list[dict[str, Any]]:
         if server_name in self._discovered:
             return self._discovered[server_name]
@@ -60,10 +70,15 @@ class MCPManager:
 
         command = config.get("command")
         if command:
-            tools = self._discover_stdio(server_name, str(command), list(config.get("args") or []))
+            tools = self._discover_with_client(
+                server_name,
+                self._get_or_create_stdio_client(server_name, str(command), list(config.get("args") or [])),
+            )
         elif config.get("url"):
-            logger.info("MCP HTTP transport not implemented for %s; returning empty tool list", server_name)
-            tools = []
+            tools = self._discover_with_client(
+                server_name,
+                self._get_or_create_http_client(server_name, str(config["url"])),
+            )
         else:
             tools = []
 
@@ -81,14 +96,19 @@ class MCPManager:
             client.close()
         self._clients.clear()
 
-    def _discover_stdio(self, server_name: str, command: str, args: list[str]) -> list[dict[str, Any]]:
-        client = self._get_or_create_client(server_name, command, args)
+    def _discover_with_client(
+        self,
+        server_name: str,
+        client: MCPStdioClient | MCPHTTPClient,
+    ) -> list[dict[str, Any]]:
         try:
             raw_tools = client.list_tools()
-        except MCPStdioError as exc:
+        except (MCPStdioError, MCPHTTPError) as exc:
             logger.warning("MCP discovery failed for %s: %s", server_name, exc)
             return []
+        return self._normalize_tools(server_name, raw_tools)
 
+    def _normalize_tools(self, server_name: str, raw_tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = []
         for item in raw_tools:
             name = str(item.get("name", ""))
@@ -106,13 +126,28 @@ class MCPManager:
         logger.info("MCP discovered %d tools for %s", len(tools), server_name)
         return tools
 
-    def _get_client(self, server_name: str) -> MCPStdioClient | None:
+    def _get_client(self, server_name: str) -> MCPStdioClient | MCPHTTPClient | None:
+        if server_name in self._clients:
+            return self._clients[server_name]
         config = self.settings.mcp.servers.get(server_name)
-        if not config or not config.get("command"):
+        if not config:
             return None
-        return self._get_or_create_client(server_name, str(config["command"]), list(config.get("args") or []))
+        if config.get("command"):
+            return self._get_or_create_stdio_client(
+                server_name,
+                str(config["command"]),
+                list(config.get("args") or []),
+            )
+        if config.get("url"):
+            return self._get_or_create_http_client(server_name, str(config["url"]))
+        return None
 
-    def _get_or_create_client(self, server_name: str, command: str, args: list[str]) -> MCPStdioClient:
+    def _get_or_create_stdio_client(self, server_name: str, command: str, args: list[str]) -> MCPStdioClient:
         if server_name not in self._clients:
             self._clients[server_name] = MCPStdioClient(command, args)
+        return self._clients[server_name]
+
+    def _get_or_create_http_client(self, server_name: str, url: str) -> MCPHTTPClient:
+        if server_name not in self._clients:
+            self._clients[server_name] = MCPHTTPClient(url)
         return self._clients[server_name]

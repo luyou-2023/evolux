@@ -54,7 +54,7 @@ class EvoluxACPAgent:
             protocol_version=acp.PROTOCOL_VERSION,
             agent_info=Implementation(name="evolux", version="0.4.0"),
             agent_capabilities=AgentCapabilities(
-                load_session=False,
+                load_session=True,
                 prompt_capabilities=PromptCapabilities(image=False),
                 session_capabilities=SessionCapabilities(),
             ),
@@ -65,15 +65,16 @@ class EvoluxACPAgent:
         return None
 
     async def new_session(self, cwd: str, mcp_servers: list | None = None, **kwargs: Any) -> NewSessionResponse:
-        state = self.session_manager.create_session(cwd=cwd)
+        state = self.session_manager.create_session(cwd=cwd, mcp_servers=mcp_servers)
         return NewSessionResponse(session_id=state.session_id)
 
     async def load_session(
         self, cwd: str, session_id: str, mcp_servers: list | None = None, **kwargs: Any
     ) -> LoadSessionResponse | None:
-        if self.session_manager.get_session(session_id):
-            return LoadSessionResponse()
-        return None
+        state = self.session_manager.load_session(session_id, cwd=cwd, mcp_servers=mcp_servers)
+        if state is None:
+            return None
+        return LoadSessionResponse()
 
     async def list_sessions(self, cursor: str | None = None, cwd: str | None = None, **kwargs: Any) -> ListSessionsResponse:
         sessions = [

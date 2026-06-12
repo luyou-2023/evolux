@@ -6,6 +6,17 @@ from acp_adapter.server import EvoluxACPAgent
 
 
 @pytest.mark.asyncio
+async def test_acp_load_session_endpoint(evolux_home, monkeypatch):
+    monkeypatch.setattr("acp_adapter.session.get_evolux_home", lambda: evolux_home)
+    monkeypatch.setattr("agent.runtime.get_evolux_home", lambda: evolux_home)
+    agent = EvoluxACPAgent()
+    created = await agent.new_session(cwd=str(evolux_home))
+    loaded = await agent.load_session(cwd=str(evolux_home), session_id=created.session_id)
+    assert loaded is not None
+    await agent.close_session(created.session_id)
+
+
+@pytest.mark.asyncio
 async def test_acp_initialize():
     agent = EvoluxACPAgent()
     response = await agent.initialize(protocol_version=1)

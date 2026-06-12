@@ -14,6 +14,7 @@ ORCHESTRATOR_ALWAYS = frozenset(
         "create_subagent",
         "dispatch_subagent",
         "retire_subagent",
+        "clarify",
         "skills_list",
         "skill_view",
         "memory",

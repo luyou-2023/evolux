@@ -12,6 +12,13 @@ from agent.memory_manager import MemoryManager
 from agent.orchestrator import OrchestratorAgent
 from agent.routing import FusionWeights, RoutingContext, SubAgentCandidate, fuse_routing
 from agent.settings import Settings, load_settings
+from agent.session_monitor import (
+    SessionMonitorHook,
+    ensure_session_monitor_agent,
+    is_internal_agent,
+    turn_end_message,
+    turn_start_message,
+)
 from agent.skill_router import SkillRouter
 from agent.subagent import SubAgent
 from evolux_constants import get_evolux_home
@@ -64,6 +71,7 @@ class EvoluxAgent:
 
         sync_mcp_tools(self.mcp_manager)
         self.assistant_registry = AssistantRegistry(home=self.home)
+        ensure_session_monitor_agent(self.agent_registry, assistant_id)
 
         self._tool_context = OrchestratorToolContext(
             assistant_id=assistant_id,
@@ -85,6 +93,9 @@ class EvoluxAgent:
             tool_executor=combined_tool_executor,
         )
         self._turn_trace = None
+        self._progress_callback = None
+        self._session_key = ""
+        self._platform = "cli"
 
     def prepare_routing(self, user_message: str) -> RoutingContext:
         skill_candidates = self.skill_router.identify(
@@ -146,8 +157,12 @@ class EvoluxAgent:
         tool_hook=None,
         text_hook=None,
         trace: TurnTrace | None = None,
+        progress_callback: Callable[[str], None] | None = None,
     ):
         self._turn_trace = trace
+        self._progress_callback = progress_callback if self.settings.monitor.push_interim else None
+        self._session_key = session_key
+        self._platform = platform
         session_id = self.session_db.get_or_create_session(
             session_key=session_key,
             assistant_id=self.assistant_id,
@@ -180,6 +195,15 @@ class EvoluxAgent:
             platform=platform,
         )
         hooks = [activity_hook]
+        monitor_hook: SessionMonitorHook | None = None
+        if self.settings.monitor.enabled:
+            monitor_hook = SessionMonitorHook(
+                session_key=session_key,
+                assistant_id=self.assistant_id,
+                platform=platform,
+                on_progress=self._progress_callback,
+            )
+            hooks.append(monitor_hook)
         if trace is not None:
             trace.user_message = user_message[:200]
             trace.set_routing(
@@ -198,6 +222,8 @@ class EvoluxAgent:
             platform=platform,
             detail=user_message[:200],
         )
+        if monitor_hook is not None:
+            monitor_hook.push(turn_start_message(user_message))
         result = self.orchestrator.run_turn(
             turn_messages,
             prefix_messages=prefix,
@@ -213,10 +239,15 @@ class EvoluxAgent:
             platform=platform,
             detail=(result.content or "")[:200],
         )
+        if monitor_hook is not None:
+            end_msg = turn_end_message(subagent_count=monitor_hook.subagent_dispatches)
+            if end_msg:
+                monitor_hook.push(end_msg)
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)
             self.session_db.append_message(session_id, "assistant", result.content)
         self._turn_trace = None
+        self._progress_callback = None
         return result
 
     def dispatch_subagent(
@@ -230,6 +261,8 @@ class EvoluxAgent:
         agent_def = self.agent_registry.get(agent_id)
         if agent_def is None:
             return {"error": f"unknown agent: {agent_id}"}
+        if is_internal_agent(agent_id):
+            return {"error": f"agent reserved for system use: {agent_id}"}
 
         skill_names = skills or agent_def.skills
         skill_instructions = self.skill_router.load_for_execution(skill_names)
@@ -255,7 +288,20 @@ class EvoluxAgent:
             ),
             tool_definitions=subagent_tools,
         )
-        subagent_hook = TraceToolHook(self._turn_trace, agent_id=agent_id) if self._turn_trace else None
+        subagent_hooks = []
+        if self._turn_trace is not None:
+            subagent_hooks.append(TraceToolHook(self._turn_trace, agent_id=agent_id))
+        if self.settings.monitor.enabled and self._progress_callback is not None:
+            subagent_hooks.append(
+                SessionMonitorHook(
+                    session_key=self._session_key,
+                    assistant_id=self.assistant_id,
+                    platform=self._platform,
+                    on_progress=self._progress_callback,
+                    nested_agent_id=agent_id,
+                )
+            )
+        subagent_hook = CombinedToolHook(*subagent_hooks) if subagent_hooks else None
         result = subagent.run_task(task, context_slice=context_slice, tool_hook=subagent_hook)
         _touch_agent_usage(self.agent_registry, agent_def)
         self.subagent_index.sync_agent(self.agent_registry.get(agent_id))

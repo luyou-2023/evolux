@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from agent.agent_registry import AgentDefinition
-from agent.routing import SubAgentCandidate
+from agent.session_monitor import is_internal_agent
 
 
 @dataclass
@@ -40,11 +40,18 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
     if name == "list_subagents":
         agents = ctx.agent_registry.list_by_assistant(ctx.assistant_id)
         return json.dumps(
-            [{"agent_id": a.agent_id, "name": a.name, "skills": a.skills} for a in agents],
+            [
+                {"agent_id": a.agent_id, "name": a.name, "skills": a.skills}
+                for a in agents
+                if not is_internal_agent(a.agent_id) and not a.stats.get("internal")
+            ],
             ensure_ascii=False,
         )
 
     if name == "create_subagent":
+        agent_id = str(arguments.get("agent_id") or "")
+        if is_internal_agent(agent_id):
+            return json.dumps({"error": f"agent id reserved: {agent_id}"}, ensure_ascii=False)
         agent = AgentDefinition(
             agent_id=arguments["agent_id"],
             assistant_id=ctx.assistant_id,
@@ -59,6 +66,9 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
         return json.dumps({"created": agent.agent_id}, ensure_ascii=False)
 
     if name == "dispatch_subagent":
+        agent_id = str(arguments.get("agent_id") or "")
+        if is_internal_agent(agent_id):
+            return json.dumps({"error": f"agent reserved for system use: {agent_id}"}, ensure_ascii=False)
         result = ctx.dispatch_subagent(
             agent_id=arguments["agent_id"],
             task=arguments.get("task", ""),

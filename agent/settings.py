@@ -66,6 +66,12 @@ class CronSettings:
 
 
 @dataclass
+class MonitorSettings:
+    enabled: bool = True
+    push_interim: bool = True
+
+
+@dataclass
 class Settings:
     orchestrator_max_iterations: int = 30
     subagent_max_iterations: int = 90
@@ -76,6 +82,7 @@ class Settings:
     mcp: MCPSettings = field(default_factory=MCPSettings)
     vector: VectorSettings = field(default_factory=VectorSettings)
     cron: CronSettings = field(default_factory=CronSettings)
+    monitor: MonitorSettings = field(default_factory=MonitorSettings)
 
 
 def load_settings(home: Path | None = None) -> Settings:
@@ -165,5 +172,12 @@ def load_settings(home: Path | None = None) -> Settings:
     if isinstance(cron, dict):
         jobs = cron.get("jobs") or []
         settings.cron = CronSettings(jobs=list(jobs) if isinstance(jobs, list) else [])
+
+    monitor = raw.get("monitor", {})
+    if isinstance(monitor, dict):
+        settings.monitor = MonitorSettings(
+            enabled=bool(monitor.get("enabled", settings.monitor.enabled)),
+            push_interim=bool(monitor.get("push_interim", settings.monitor.push_interim)),
+        )
 
     return settings

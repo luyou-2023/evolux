@@ -84,11 +84,29 @@ class GatewayRunner:
             )
         agent = self._get_agent(event.assistant_id)
         trace = TurnTrace()
+        progress_callback = None
+        if (
+            agent.settings.monitor.push_interim
+            and event.source.platform == "feishu"
+            and event.source.chat_id
+        ):
+            client = self._get_feishu_client(event.assistant_id)
+            if client:
+                chat_id = event.source.chat_id
+
+                def _push_progress(message: str, *, _client=client, _chat_id=chat_id) -> None:
+                    try:
+                        _client.send_text(_chat_id, message)
+                    except Exception as exc:
+                        logger.warning("Feishu progress push failed assistant=%s: %s", event.assistant_id, exc)
+
+                progress_callback = _push_progress
         result = agent.run_orchestrator_turn(
             session_key=session_key,
             user_message=event.text,
             platform=event.source.platform,
             trace=trace,
+            progress_callback=progress_callback,
         )
         response = GatewayResponse(
             session_key=session_key,

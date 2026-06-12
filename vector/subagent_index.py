@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent.agent_registry import AgentDefinition, AgentRegistry
+from agent.session_monitor import is_internal_agent
 from vector.embedder import Embedder, HashEmbedder
 from vector.store import create_vector_store
 
@@ -24,7 +25,7 @@ class SubAgentIndex:
         self.store = create_vector_store(home, "subagents.json", backend=backend)
 
     def sync_agent(self, agent: AgentDefinition) -> None:
-        if agent.retired:
+        if agent.retired or is_internal_agent(agent.agent_id) or agent.stats.get("internal"):
             self.store.delete(agent.agent_id)
             return
         text = f"{agent.name} {agent.domain} {agent.description}"

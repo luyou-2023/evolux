@@ -44,6 +44,7 @@ def _page(title: str, body: str) -> str:
     .event {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; padding: 0.45rem 0.6rem; border-bottom: 1px solid #eee; }}
     .event-kind {{ color: #7c3aed; font-weight: 600; }}
     .event-kind-card {{ color: #059669; }}
+    .event-kind-progress {{ color: #2563eb; }}
     .event-meta {{ color: #6b7280; font-size: 0.8rem; }}
     .status {{ color: #059669; font-size: 0.9rem; margin-bottom: 0.75rem; }}
   </style>
@@ -160,7 +161,11 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
             const item = document.createElement("div");
             item.className = "event";
             const kind = document.createElement("span");
-            kind.className = "event-kind" + (raw.kind === "card_action_received" ? " event-kind-card" : "");
+            kind.className = "event-kind" + (
+              raw.kind === "card_action_received" ? " event-kind-card"
+              : raw.kind === "progress_update" ? " event-kind-progress"
+              : ""
+            );
             kind.textContent = raw.kind || "event";
             const meta = document.createElement("div");
             meta.className = "event-meta";

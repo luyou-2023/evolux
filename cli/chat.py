@@ -23,7 +23,13 @@ def _build_chat_agent(home: Path | None, assistant_id: str):
         assistant_id,
         SessionSource(platform="cli", chat_type="dm", chat_id="local"),
     )
-    return base, agent, session_key
+    progress_callback = None
+    if settings.monitor.push_interim:
+
+        def progress_callback(message: str) -> None:
+            print(message, file=sys.stderr)
+
+    return base, agent, session_key, progress_callback
 
 
 def run_chat_once(
@@ -33,9 +39,15 @@ def run_chat_once(
     *,
     trace: bool = False,
 ) -> int:
-    _, agent, session_key = _build_chat_agent(home, assistant_id)
+    _, agent, session_key, progress_callback = _build_chat_agent(home, assistant_id)
     turn_trace = TurnTrace() if trace else None
-    result = agent.run_orchestrator_turn(session_key, message, platform="cli", trace=turn_trace)
+    result = agent.run_orchestrator_turn(
+        session_key,
+        message,
+        platform="cli",
+        trace=turn_trace,
+        progress_callback=progress_callback,
+    )
     if turn_trace:
         render_trace(turn_trace)
     print(result.content or "")
@@ -49,11 +61,13 @@ def run_chat(
     *,
     trace: bool = False,
 ) -> int:
-    _, agent, session_key = _build_chat_agent(home, assistant_id)
+    _, agent, session_key, progress_callback = _build_chat_agent(home, assistant_id)
 
     print(f"Evolux chat (assistant={assistant_id}). Type /exit to quit.")
     if trace:
         print("Trace mode: orchestration steps print to stderr.", file=sys.stderr)
+    elif progress_callback:
+        print("Monitor: orchestration progress prints to stderr.", file=sys.stderr)
     while True:
         try:
             line = input("you> ").strip()
@@ -66,7 +80,13 @@ def run_chat(
             break
 
         turn_trace = TurnTrace() if trace else None
-        result = agent.run_orchestrator_turn(session_key, line, platform="cli", trace=turn_trace)
+        result = agent.run_orchestrator_turn(
+            session_key,
+            line,
+            platform="cli",
+            trace=turn_trace,
+            progress_callback=progress_callback,
+        )
         if turn_trace:
             render_trace(turn_trace)
         print(f"bot> {result.content or '(no response)'}")

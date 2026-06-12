@@ -23,7 +23,7 @@ evolux version
 |-------|--------|
 | Phase 1 Core runtime | Done |
 | Phase 2 Triple routing + compression | Done |
-| Phase 3 Gateway + multi-assistant | Planned |
+| Phase 3 Gateway + multi-assistant | Done |
 | Phase 4 Extensions | Planned |
 
 ## Phase 2 highlights
@@ -34,3 +34,20 @@ evolux version
 - Memory snapshot (MEMORY/USER)
 - Orchestrator tools: `identify_skills`, `search_subagents`, `dispatch_subagent`, `create_subagent`
 - `EvoluxAgent.prepare_routing()` integrated into turns
+
+## Phase 3 highlights
+
+- `build_session_key` with `assistant_id` isolation
+- `AssistantRegistry` multi-assistant config
+- `GatewayRunner` asyncio + thread pool bridge
+- Feishu webhook parser + end-to-end gateway test
+- CLI: `evolux setup`, `assistant bind/list`, `gateway start`
+
+## CLI
+
+```bash
+evolux setup
+evolux assistant bind feishu --id work-bot --app-id <id> --app-secret <secret>
+evolux assistant list
+evolux gateway start
+```

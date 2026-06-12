@@ -1,0 +1,98 @@
+"""Multi-assistant configuration registry."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from evolux_constants import get_evolux_home
+
+
+@dataclass
+class AssistantConfig:
+    assistant_id: str
+    name: str
+    platforms: dict[str, dict[str, Any]] = field(default_factory=dict)
+    skills_allowlist: list[str] = field(default_factory=list)
+
+
+class AssistantRegistry:
+    """Load assistant definitions from config.yaml."""
+
+    def __init__(self, home: Path | None = None):
+        self.home = home or get_evolux_home()
+        self._assistants: dict[str, AssistantConfig] = {}
+        self.reload()
+
+    def reload(self) -> None:
+        self._assistants = {}
+        config_path = self.home / "config.yaml"
+        if not config_path.exists():
+            self._assistants["default"] = AssistantConfig(
+                assistant_id="default",
+                name="默认助手",
+                platforms={"cli": {}},
+            )
+            return
+
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        assistants = raw.get("assistants") or {}
+        if not assistants:
+            self._assistants["default"] = AssistantConfig(
+                assistant_id="default",
+                name="默认助手",
+                platforms={"cli": {}},
+            )
+            return
+
+        for assistant_id, cfg in assistants.items():
+            if not isinstance(cfg, dict):
+                continue
+            self._assistants[assistant_id] = AssistantConfig(
+                assistant_id=assistant_id,
+                name=str(cfg.get("name", assistant_id)),
+                platforms=dict(cfg.get("platforms") or {}),
+                skills_allowlist=list(cfg.get("skills_allowlist") or []),
+            )
+
+    def get(self, assistant_id: str) -> AssistantConfig | None:
+        return self._assistants.get(assistant_id)
+
+    def list(self) -> list[AssistantConfig]:
+        return sorted(self._assistants.values(), key=lambda item: item.assistant_id)
+
+    def resolve_for_platform(self, platform: str, *, preferred: str | None = None) -> AssistantConfig:
+        if preferred and preferred in self._assistants:
+            assistant = self._assistants[preferred]
+            if platform in assistant.platforms:
+                return assistant
+
+        for assistant in self.list():
+            if platform in assistant.platforms:
+                return assistant
+
+        default = self._assistants.get("default")
+        if default:
+            return default
+        raise KeyError(f"no assistant configured for platform: {platform}")
+
+    def bind_platform(
+        self,
+        assistant_id: str,
+        platform: str,
+        platform_config: dict[str, Any],
+    ) -> None:
+        config_path = self.home / "config.yaml"
+        raw: dict[str, Any] = {}
+        if config_path.exists():
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+
+        assistants = raw.setdefault("assistants", {})
+        entry = assistants.setdefault(assistant_id, {"name": assistant_id, "platforms": {}})
+        entry.setdefault("platforms", {})[platform] = platform_config
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        self.reload()

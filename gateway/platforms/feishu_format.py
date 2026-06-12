@@ -25,11 +25,13 @@ def build_feishu_post_content(*, answer: str, trace: TurnTrace | None = None) ->
             rows.append([{"tag": "text", "text": f"Skill: {', '.join(trace.routing_skills)}\n"}])
         if trace.routing_agents:
             rows.append([{"tag": "text", "text": f"子 Agent: {', '.join(trace.routing_agents)}\n"}])
-        for step in trace.steps[:12]:
+        for step in trace.steps[:16]:
             emoji = _CATEGORY_EMOJI.get(step.category, "•")
             rows.append([{"tag": "text", "text": f"{emoji} {step.title}\n"}])
             if step.detail and step.category == "subagent":
                 rows.append([{"tag": "text", "text": f"   {step.detail[:120]}\n"}])
+            elif step.agent_id and step.category in {"mcp", "builtin"}:
+                rows.append([{"tag": "text", "text": f"   {step.detail[:80]}\n"}])
         rows.append([{"tag": "text", "text": "\n"}])
 
     rows.append([{"tag": "text", "text": "💬 回复\n", "style": ["bold"]}])
@@ -44,14 +46,6 @@ def build_feishu_post_content(*, answer: str, trace: TurnTrace | None = None) ->
     }
 
 
-def build_feishu_post_reply(chat_id: str, *, answer: str, trace: TurnTrace | None = None) -> dict[str, Any]:
-    return {
-        "receive_id": chat_id,
-        "msg_type": "post",
-        "content": json.dumps(build_feishu_post_content(answer=answer, trace=trace), ensure_ascii=False),
-    }
-
-
 def render_trace_plain(trace: TurnTrace) -> str:
     """Fallback plain-text trace for clients without post support."""
     lines: list[str] = []
@@ -62,6 +56,61 @@ def render_trace_plain(trace: TurnTrace) -> str:
     for step in trace.steps[:12]:
         lines.append(f"• {step.title}")
     return "\n".join(lines)
+
+
+def find_clarify_request(trace: TurnTrace | None) -> dict[str, Any] | None:
+    if trace is None:
+        return None
+    for step in reversed(trace.steps):
+        if step.name != "clarify":
+            continue
+        try:
+            payload = json.loads(step.detail)
+        except json.JSONDecodeError:
+            continue
+        if payload.get("clarify") and payload.get("question"):
+            return payload
+    return None
+
+
+def build_feishu_clarify_card(clarify: dict[str, Any]) -> dict[str, Any]:
+    question = str(clarify.get("question") or "")
+    options = [str(item) for item in (clarify.get("options") or [])][:6]
+    elements: list[dict[str, Any]] = [
+        {"tag": "div", "text": {"tag": "lark_md", "content": f"**{question}**"}},
+    ]
+    if options:
+        elements.append({"tag": "hr"})
+        option_lines = "\n".join(f"{index}. {label}" for index, label in enumerate(options, 1))
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": option_lines}})
+        buttons = []
+        for label in options[:3]:
+            buttons.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": label[:20]},
+                    "type": "default",
+                    "value": {"option": label},
+                }
+            )
+        if buttons:
+            elements.append({"tag": "action", "actions": buttons})
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": "blue",
+            "title": {"tag": "plain_text", "content": "需要您的确认"},
+        },
+        "elements": elements,
+    }
+
+
+def build_feishu_post_reply(chat_id: str, *, answer: str, trace: TurnTrace | None = None) -> dict[str, Any]:
+    return {
+        "receive_id": chat_id,
+        "msg_type": "post",
+        "content": json.dumps(build_feishu_post_content(answer=answer, trace=trace), ensure_ascii=False),
+    }
 
 
 def _split_text(text: str, limit: int) -> list[str]:

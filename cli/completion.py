@@ -99,12 +99,62 @@ def _bundled_skill_names() -> list[str]:
     return sorted(names)
 
 
+def generate_bash_completion() -> str:
+    assistants = " ".join(_assistant_ids())
+    skills = " ".join(_bundled_skill_names())
+    return f"""# Evolux bash completion — add to ~/.bashrc: eval "$(evolux completion bash)"
+
+_evolux_completion() {{
+    local cur prev
+    cur="${{COMP_WORDS[COMP_CWORD]}}"
+    prev="${{COMP_WORDS[COMP_CWORD-1]}}"
+
+    if [[ ${{COMP_CWORD}} -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "version setup chat tui skills cron acp dashboard assistant gateway completion" -- "$cur") )
+        return
+    fi
+
+    case "${{COMP_WORDS[1]}}" in
+        chat)
+            if [[ "$prev" == "--assistant" ]]; then
+                COMPREPLY=( $(compgen -W "{assistants or 'default'}" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "--assistant --once --trace" -- "$cur") )
+            fi
+            ;;
+        skills)
+            if [[ ${{COMP_CWORD}} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "list reindex install" -- "$cur") )
+            elif [[ "${{COMP_WORDS[2]}}" == "install" && ${{COMP_CWORD}} -eq 3 ]]; then
+                COMPREPLY=( $(compgen -W "{skills or 'git plan'}" -- "$cur") )
+            fi
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "zsh bash" -- "$cur") )
+            ;;
+        acp|dashboard|gateway)
+            if [[ ${{COMP_CWORD}} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "start" -- "$cur") )
+            elif [[ "$cur" == "--check" || "$prev" == "start" ]]; then
+                COMPREPLY=( $(compgen -W "--check" -- "$cur") )
+            fi
+            ;;
+        *)
+            COMPREPLY=()
+            ;;
+    esac
+}}
+
+complete -F _evolux_completion evolux
+"""
+
+
 def run_completion(shell: str) -> int:
     if shell == "zsh":
         print(generate_zsh_completion())
         return 0
     if shell == "bash":
-        print("# bash completion not yet implemented; use: eval \"$(evolux completion zsh)\" in zsh")
+        print(generate_bash_completion())
         return 0
     print(f"unsupported shell: {shell}", flush=True)
     return 1

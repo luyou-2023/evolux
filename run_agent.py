@@ -255,7 +255,8 @@ class EvoluxAgent:
             ),
             tool_definitions=subagent_tools,
         )
-        result = subagent.run_task(task, context_slice=context_slice)
+        subagent_hook = TraceToolHook(self._turn_trace, agent_id=agent_id) if self._turn_trace else None
+        result = subagent.run_task(task, context_slice=context_slice, tool_hook=subagent_hook)
         _touch_agent_usage(self.agent_registry, agent_def)
         self.subagent_index.sync_agent(self.agent_registry.get(agent_id))
         payload = {

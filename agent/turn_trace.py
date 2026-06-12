@@ -26,6 +26,7 @@ class TraceStep:
     detail: str = ""
     category: str = "tool"
     status: str = "ok"
+    agent_id: str = ""
 
 
 @dataclass
@@ -51,9 +52,18 @@ class TurnTrace:
             )
         )
 
-    def add_tool(self, *, name: str, arguments: dict[str, Any], result: str) -> None:
+    def add_tool(
+        self,
+        *,
+        name: str,
+        arguments: dict[str, Any],
+        result: str,
+        agent_id: str = "",
+    ) -> None:
         category = categorize_tool(name)
         title = tool_title(name, arguments)
+        if agent_id:
+            title = f"  └ {agent_id} · {title}"
         status = "error" if _looks_like_error(result) else "ok"
         self.steps.append(
             TraceStep(
@@ -63,6 +73,7 @@ class TurnTrace:
                 detail=(result or "")[:240],
                 category=category,
                 status=status,
+                agent_id=agent_id,
             )
         )
 

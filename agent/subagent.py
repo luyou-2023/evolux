@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from agent.config import subagent_max_iterations
 from agent.conversation_loop import ConversationResult, run_conversation_loop
+from agent.tool_hooks import ToolCallHook
 
 
 class SubAgent:
@@ -36,6 +37,7 @@ class SubAgent:
         skill_instructions: str = "",
         *,
         tools: list[dict[str, Any]] | None = None,
+        tool_hook: ToolCallHook | None = None,
     ) -> ConversationResult:
         messages: list[dict[str, Any]] = []
         system_parts = [self.system_prompt, self.skill_instructions, skill_instructions]
@@ -50,4 +52,5 @@ class SubAgent:
             tool_executor=self.tool_executor,
             max_iterations=self.max_iterations,
             tools=tools or self.tool_definitions,
+            tool_hook=tool_hook,
         )

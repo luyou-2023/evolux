@@ -13,7 +13,11 @@ from gateway.activity import emit_activity
 from gateway.assistant_registry import AssistantRegistry
 from gateway.events import MessageEvent
 from agent.turn_trace import TurnTrace
-from gateway.platforms.feishu_format import build_feishu_post_content
+from gateway.platforms.feishu_format import (
+    build_feishu_clarify_card,
+    build_feishu_post_content,
+    find_clarify_request,
+)
 from gateway.platforms.feishu_api import FeishuAPIClient, build_feishu_client
 from gateway.session import build_session_key
 from run_agent import EvoluxAgent
@@ -98,6 +102,9 @@ class GatewayRunner:
         if not client:
             return
         try:
+            clarify = find_clarify_request(response.trace)
+            if clarify:
+                client.send_interactive(event.source.chat_id, build_feishu_clarify_card(clarify))
             post = build_feishu_post_content(answer=response.content or "", trace=response.trace)
             client.send_post(event.source.chat_id, post)
             response.reply_sent = True

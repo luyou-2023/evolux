@@ -86,6 +86,7 @@ When `app_id` and `app_secret` are configured, Evolux automatically sends the or
 - `vector.backend` — `sqlite-vec` (default), `sqlite`, or `json`
 - `evolux chat --trace` — show orchestration trace (tools/MCP/subagents) on stderr
 - `eval "$(evolux completion zsh)"` — zsh tab completion
+- `eval "$(evolux completion bash)"` — bash tab completion
 - `assistants.<id>.routing.fusion` — per-assistant fusion weights
 
 ### Hermes-aligned surface

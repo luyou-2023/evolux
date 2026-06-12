@@ -58,6 +58,18 @@ class FeishuAPIClient:
         logger.info("Feishu post sent to chat_id=%s", chat_id)
         return body
 
+    def send_interactive(self, chat_id: str, card: dict[str, Any]) -> dict[str, Any]:
+        token = self.get_tenant_access_token()
+        payload = {
+            "receive_id": chat_id,
+            "msg_type": "interactive",
+            "content": json.dumps(card, ensure_ascii=False),
+        }
+        url = f"{self.base_url}/im/v1/messages?receive_id_type=chat_id"
+        body = self._post(url, token, payload)
+        logger.info("Feishu interactive card sent to chat_id=%s", chat_id)
+        return body
+
     def read_doc_raw(self, document_id: str) -> dict[str, Any]:
         token = self.get_tenant_access_token()
         url = f"{self.base_url}/docx/v1/documents/{document_id}/raw_content"

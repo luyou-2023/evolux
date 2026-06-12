@@ -21,9 +21,15 @@ class OrchestratorAgent:
         self.max_iterations = max_iterations or orchestrator_max_iterations()
         self.tool_executor = tool_executor
 
-    def run_turn(self, messages: list[dict[str, Any]]) -> ConversationResult:
+    def run_turn(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        prefix_messages: list[dict[str, Any]] | None = None,
+    ) -> ConversationResult:
+        combined = list(prefix_messages or []) + list(messages)
         return run_conversation_loop(
-            messages=messages,
+            messages=combined,
             llm_call=self.llm_call,
             tool_executor=self.tool_executor,
             max_iterations=self.max_iterations,

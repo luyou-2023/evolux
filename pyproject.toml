@@ -25,7 +25,7 @@ evolux = "cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "cli*", "gateway*", "tools*", "mcp*", "skills*", "acp*", "cron*", "locales*"]
+include = ["agent*", "cli*", "gateway*", "tools*", "mcp*", "skills*", "acp*", "cron*", "locales*", "vector*"]
 
 [tool.setuptools]
 py-modules = ["run_agent", "evolux_state", "evolux_constants"]

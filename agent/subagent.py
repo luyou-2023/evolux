@@ -17,18 +17,22 @@ class SubAgent:
         llm_call: Callable[[list[dict[str, Any]]], Any],
         max_iterations: int | None = None,
         system_prompt: str = "",
+        skill_instructions: str = "",
         tool_executor: Callable[[dict[str, Any]], str] | None = None,
     ):
         self.agent_id = agent_id
         self.llm_call = llm_call
         self.max_iterations = max_iterations or subagent_max_iterations()
         self.system_prompt = system_prompt
+        self.skill_instructions = skill_instructions
         self.tool_executor = tool_executor
 
-    def run_task(self, task: str, context_slice: str = "") -> ConversationResult:
+    def run_task(self, task: str, context_slice: str = "", skill_instructions: str = "") -> ConversationResult:
         messages: list[dict[str, Any]] = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
+        system_parts = [self.system_prompt, self.skill_instructions, skill_instructions]
+        system_content = "\n\n".join(part for part in system_parts if part).strip()
+        if system_content:
+            messages.append({"role": "system", "content": system_content})
         user_content = task if not context_slice else f"{task}\n\nContext:\n{context_slice}"
         messages.append({"role": "user", "content": user_content})
         return run_conversation_loop(

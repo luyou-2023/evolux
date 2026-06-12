@@ -18,6 +18,8 @@ class RoutingSettings:
     subagent_top_k: int = 5
     enable_keyword: bool = True
     enable_vector: bool = True
+    trim_tools: bool = True
+    tool_max: int = 40
 
 
 @dataclass
@@ -101,6 +103,8 @@ def load_settings(home: Path | None = None) -> Settings:
     settings.routing.enable_keyword = bool(skill_identify.get("enable_keyword", True))
     settings.routing.enable_vector = bool(skill_identify.get("enable_vector", True))
     settings.routing.subagent_top_k = int(routing.get("subagent_top_k", 5))
+    settings.routing.trim_tools = bool(routing.get("trim_tools", True))
+    settings.routing.tool_max = int(routing.get("tool_max", 40))
 
     llm = raw.get("llm", {})
     provider = str(llm.get("provider", settings.llm.provider))

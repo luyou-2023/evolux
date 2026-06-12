@@ -16,8 +16,11 @@ from agent.skill_router import SkillRouter
 from agent.subagent import SubAgent
 from evolux_constants import get_evolux_home
 from evolux_state import SessionDB
+from agent.activity_hooks import ActivityToolHook, CombinedToolHook
 from agent.llm import resolve_api_key
+from agent.tool_selection import select_tools_for_turn
 from agent.tooling import build_combined_tool_executor, get_agent_tool_definitions, get_subagent_tool_definitions
+from gateway.activity import emit_activity
 from gateway.assistant_registry import AssistantRegistry
 from mcp.manager import MCPManager
 from tools.orchestrator_tools import OrchestratorToolContext
@@ -158,13 +161,41 @@ class EvoluxAgent:
         prefix = self._build_prefix_messages(routing)
         turn_messages = history + [{"role": "user", "content": user_message}]
         tools = get_agent_tool_definitions(platform=platform)
+        if self.settings.routing.trim_tools:
+            tools = select_tools_for_turn(
+                tools,
+                routing,
+                platform=platform,
+                max_tools=self.settings.routing.tool_max,
+            )
 
+        activity_hook = ActivityToolHook(
+            session_key=session_key,
+            assistant_id=self.assistant_id,
+            platform=platform,
+        )
+        merged_tool_hook = CombinedToolHook(activity_hook, tool_hook)
+
+        emit_activity(
+            "turn_start",
+            session_key=session_key,
+            assistant_id=self.assistant_id,
+            platform=platform,
+            detail=user_message[:200],
+        )
         result = self.orchestrator.run_turn(
             turn_messages,
             prefix_messages=prefix,
-            tool_hook=tool_hook,
+            tool_hook=merged_tool_hook,
             text_hook=text_hook,
             tools=tools,
+        )
+        emit_activity(
+            "turn_end",
+            session_key=session_key,
+            assistant_id=self.assistant_id,
+            platform=platform,
+            detail=(result.content or "")[:200],
         )
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)

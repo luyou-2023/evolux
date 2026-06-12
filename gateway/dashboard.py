@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 from pathlib import Path
 from urllib.parse import quote
 
 from evolux_state import SessionDB
+from gateway.activity import get_activity_bus
 from gateway.assistant_registry import AssistantRegistry
 
 try:
@@ -124,11 +126,38 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
         """
         return web.Response(text=_page("Session", body), content_type="text/html")
 
+    async def events(request: web.Request) -> web.StreamResponse:
+        bus = get_activity_bus()
+        queue = bus.subscribe()
+        response = web.StreamResponse(
+            status=200,
+            headers={
+                "Content-Type": "text/event-stream; charset=utf-8",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+        await response.prepare(request)
+        for event in bus.recent(30):
+            await response.write(f"data: {event.to_json()}\n\n".encode("utf-8"))
+        if request.query.get("once") == "1":
+            return response
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                await response.write(f"data: {item.to_json()}\n\n".encode("utf-8"))
+        finally:
+            bus.unsubscribe(queue)
+        return response
+
     app.router.add_get("/dashboard", overview)
     app.router.add_get("/dashboard/", overview)
     app.router.add_get("/dashboard/assistants", assistants)
     app.router.add_get("/dashboard/sessions", sessions)
     app.router.add_get("/dashboard/sessions/{session_key:.+}", session_detail)
+    app.router.add_get("/dashboard/events", events)
 
 
 def _sessions_table(sessions: list[dict], *, link_sessions: bool = False) -> str:

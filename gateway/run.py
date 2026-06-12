@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from gateway.activity import emit_activity
 from gateway.assistant_registry import AssistantRegistry
 from gateway.events import MessageEvent
 from gateway.platforms.feishu_api import FeishuAPIClient, build_feishu_client
@@ -58,6 +59,13 @@ class GatewayRunner:
 
     def handle_message_sync(self, event: MessageEvent) -> GatewayResponse:
         session_key = build_session_key(event.assistant_id, event.source)
+        emit_activity(
+            "message_received",
+            session_key=session_key,
+            assistant_id=event.assistant_id,
+            platform=event.source.platform,
+            detail=event.text[:200],
+        )
         agent = self._get_agent(event.assistant_id)
         result = agent.run_orchestrator_turn(
             session_key=session_key,

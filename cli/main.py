@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from cli.assistant import add_assistant_parser, run_assistant
+from cli.chat import run_chat
 from cli.gateway_cmd import run_gateway_start
 from cli.setup import run_setup
 
@@ -16,11 +17,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="Show version")
     sub.add_parser("setup", help="Initialize ~/.evolux config and directories")
+
+    chat = sub.add_parser("chat", help="Interactive orchestrator chat")
+    chat.add_argument("--assistant", default="default", help="Assistant id")
+
     add_assistant_parser(sub)
 
     gateway = sub.add_parser("gateway", help="Gateway commands")
     gateway_sub = gateway.add_subparsers(dest="gateway_command")
-    gateway_sub.add_parser("start", help="Start messaging gateway")
+    gateway_start = gateway_sub.add_parser("start", help="Start messaging gateway")
+    gateway_start.add_argument("--check", action="store_true", help="Validate config and exit")
 
     return parser
 
@@ -30,11 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "version":
-        print("evolux 0.1.0")
+        print("evolux 0.2.0")
         return 0
 
     if args.command == "setup":
         return run_setup()
+
+    if args.command == "chat":
+        return run_chat(assistant_id=args.assistant)
 
     if args.command == "assistant":
         if not args.assistant_command:
@@ -44,7 +53,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "gateway":
         if args.gateway_command == "start":
-            return run_gateway_start()
+            if getattr(args, "check", False):
+                return run_gateway_start(foreground=False)
+            return run_gateway_start(foreground=True)
         parser.parse_args(["gateway", "--help"])
         return 0
 

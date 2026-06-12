@@ -16,7 +16,8 @@ from agent.skill_router import SkillRouter
 from agent.subagent import SubAgent
 from evolux_constants import get_evolux_home
 from evolux_state import SessionDB
-from tools.orchestrator_tools import OrchestratorToolContext, build_tool_executor
+from agent.tooling import build_combined_tool_executor
+from tools.orchestrator_tools import OrchestratorToolContext
 from vector.subagent_index import SubAgentIndex
 
 
@@ -49,7 +50,7 @@ class EvoluxAgent:
             create_subagent_runner=self.create_subagent,
             dispatch_subagent=self.dispatch_subagent,
         )
-        combined_tool_executor = tool_executor or build_tool_executor(self._tool_context)
+        combined_tool_executor = tool_executor or build_combined_tool_executor(self._tool_context)
 
         self.orchestrator = OrchestratorAgent(
             llm_call=llm_call,

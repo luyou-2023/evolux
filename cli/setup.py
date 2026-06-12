@@ -26,6 +26,16 @@ routing:
     enable_keyword: true
     enable_vector: true
 
+llm:
+  model: gpt-4o-mini
+  base_url: https://api.openai.com/v1
+
+gateway:
+  host: 0.0.0.0
+  port: 8787
+
+mcp_servers: {}
+
 assistants:
   default:
     name: 默认助手

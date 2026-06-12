@@ -7,6 +7,7 @@ from gateway.assistant_registry import AssistantRegistry
 
 def test_cli_version():
     assert main(["version"]) == 0
+    # version string checked via stdout in integration; exit code suffices here
 
 
 def test_cli_setup_creates_config(evolux_home, monkeypatch):
@@ -49,4 +50,4 @@ def test_cli_gateway_start_requires_feishu(evolux_home):
 def test_cli_gateway_start_with_feishu(evolux_home):
     run_setup(home=evolux_home)
     main(["assistant", "bind", "feishu", "--id", "work-bot", "--app-id", "app1"])
-    assert main(["gateway", "start"]) == 0
+    assert main(["gateway", "start", "--check"]) == 0

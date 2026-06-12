@@ -26,11 +26,32 @@ class CompressionSettings:
 
 
 @dataclass
+class LLMSettings:
+    model: str = "gpt-4o-mini"
+    base_url: str = "https://api.openai.com/v1"
+    api_key: str | None = None
+
+
+@dataclass
+class GatewaySettings:
+    host: str = "0.0.0.0"
+    port: int = 8787
+
+
+@dataclass
+class MCPSettings:
+    servers: dict[str, dict] = field(default_factory=dict)
+
+
+@dataclass
 class Settings:
     orchestrator_max_iterations: int = 30
     subagent_max_iterations: int = 90
     routing: RoutingSettings = field(default_factory=RoutingSettings)
     compression: CompressionSettings = field(default_factory=CompressionSettings)
+    llm: LLMSettings = field(default_factory=LLMSettings)
+    gateway: GatewaySettings = field(default_factory=GatewaySettings)
+    mcp: MCPSettings = field(default_factory=MCPSettings)
 
 
 def load_settings(home: Path | None = None) -> Settings:
@@ -66,5 +87,22 @@ def load_settings(home: Path | None = None) -> Settings:
     settings.routing.enable_keyword = bool(skill_identify.get("enable_keyword", True))
     settings.routing.enable_vector = bool(skill_identify.get("enable_vector", True))
     settings.routing.subagent_top_k = int(routing.get("subagent_top_k", 5))
+
+    llm = raw.get("llm", {})
+    settings.llm = LLMSettings(
+        model=str(llm.get("model", settings.llm.model)),
+        base_url=str(llm.get("base_url", settings.llm.base_url)),
+        api_key=llm.get("api_key"),
+    )
+
+    gateway = raw.get("gateway", {})
+    settings.gateway = GatewaySettings(
+        host=str(gateway.get("host", settings.gateway.host)),
+        port=int(gateway.get("port", settings.gateway.port)),
+    )
+
+    mcp = raw.get("mcp_servers", {})
+    if isinstance(mcp, dict):
+        settings.mcp.servers = {str(k): dict(v or {}) for k, v in mcp.items()}
 
     return settings

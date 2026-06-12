@@ -23,7 +23,7 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
 class SkillRouter:
-    def __init__(self, home: Path, embedder: Embedder | None = None, *, backend: str = "json"):
+    def __init__(self, home: Path, embedder: Embedder | None = None, *, backend: str = "sqlite-vec"):
         self.home = home
         self.skills_dir = home / "skills"
         embedder = embedder or HashEmbedder()

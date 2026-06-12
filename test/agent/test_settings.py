@@ -5,6 +5,7 @@ def test_load_settings_defaults(evolux_home):
     settings = load_settings(evolux_home)
     assert settings.orchestrator_max_iterations == 30
     assert settings.compression.keep_recent_turns == 10
+    assert settings.vector.backend == "sqlite-vec"
 
 
 def test_load_settings_from_yaml(evolux_home):

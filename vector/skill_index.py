@@ -23,7 +23,7 @@ class SkillIndex:
         home: Path,
         embedder: Embedder | None = None,
         *,
-        backend: str = "json",
+        backend: str = "sqlite-vec",
     ):
         self.home = home
         self.embedder = embedder or HashEmbedder()

@@ -49,7 +49,7 @@ class MCPSettings:
 
 @dataclass
 class VectorSettings:
-    backend: str = "json"
+    backend: str = "sqlite-vec"
     embedding: str = "hash"
 
 

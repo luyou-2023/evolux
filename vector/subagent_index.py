@@ -16,7 +16,7 @@ class SubAgentIndex:
         registry: AgentRegistry | None = None,
         embedder: Embedder | None = None,
         *,
-        backend: str = "json",
+        backend: str = "sqlite-vec",
     ):
         self.home = home
         self.registry = registry or AgentRegistry(home=home)

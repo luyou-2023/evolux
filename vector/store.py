@@ -77,20 +77,31 @@ def _match_filter(metadata: dict[str, Any], flt: dict[str, Any]) -> bool:
     return all(metadata.get(key) == value for key, value in flt.items())
 
 
-def create_vector_store(home: Path, name: str, *, backend: str = "json") -> VectorStore:
+DEFAULT_VECTOR_BACKEND = "sqlite-vec"
+DEFAULT_VECTOR_DIM = 32
+
+
+def normalize_vector_backend(backend: str) -> str:
+    return backend.replace("_", "-")
+
+
+def resolve_vector_backend(backend: str | None = None) -> str:
+    """Resolve configured backend; fall back to stdlib sqlite when sqlite-vec is unavailable."""
+    requested = normalize_vector_backend(backend or DEFAULT_VECTOR_BACKEND)
+    if requested == "sqlite-vec" and not sqlite_vec_available():
+        return "sqlite"
+    return requested
+
+
+def create_vector_store(home: Path, name: str, *, backend: str | None = None) -> VectorStore:
     """Create a vector store under ``home/vector/``."""
     directory = home / "vector"
     directory.mkdir(parents=True, exist_ok=True)
     stem = Path(name).stem
-    normalized = backend.replace("_", "-")
-    if normalized == "sqlite-vec":
-        if not sqlite_vec_available():
-            raise RuntimeError(
-                "vector.backend sqlite-vec requires `pip install sqlite-vec` and a Python "
-                "build with SQLite extension loading enabled; use backend: sqlite instead"
-            )
+    resolved = resolve_vector_backend(backend)
+    if resolved == "sqlite-vec":
         return SqliteVecStore(directory / f"{stem}.db")
-    if backend == "sqlite":
+    if resolved == "sqlite":
         return SqliteVectorStore(directory / f"{stem}.db")
     return JsonVectorStore(directory / name)
 
@@ -146,9 +157,6 @@ class SqliteVectorStore:
             results.append((item_id, score, metadata))
         results.sort(key=lambda item: item[1], reverse=True)
         return results[:top_k]
-
-
-DEFAULT_VECTOR_DIM = 32
 
 
 def sqlite_vec_available() -> bool:

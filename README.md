@@ -83,6 +83,7 @@ When `app_id` and `app_secret` are configured, Evolux automatically sends the or
 - `mcp_servers` — MCP stdio servers (lazy discovery, tools prefixed `mcp_*`)
 - `cron.jobs` — scheduled orchestrator prompts
 - `vector.embedding` — `hash` (default) or `openai`
+- `vector.backend` — `sqlite-vec` (default), `sqlite`, or `json`
 - `evolux acp start --check` — validate editor tool wiring (Hermes-compatible)
 - `assistants.<id>.routing.fusion` — per-assistant fusion weights
 

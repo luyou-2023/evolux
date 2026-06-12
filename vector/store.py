@@ -81,8 +81,16 @@ def create_vector_store(home: Path, name: str, *, backend: str = "json") -> Vect
     """Create a vector store under ``home/vector/``."""
     directory = home / "vector"
     directory.mkdir(parents=True, exist_ok=True)
+    stem = Path(name).stem
+    normalized = backend.replace("_", "-")
+    if normalized == "sqlite-vec":
+        if not sqlite_vec_available():
+            raise RuntimeError(
+                "vector.backend sqlite-vec requires `pip install sqlite-vec` and a Python "
+                "build with SQLite extension loading enabled; use backend: sqlite instead"
+            )
+        return SqliteVecStore(directory / f"{stem}.db")
     if backend == "sqlite":
-        stem = Path(name).stem
         return SqliteVectorStore(directory / f"{stem}.db")
     return JsonVectorStore(directory / name)
 
@@ -135,6 +143,105 @@ class SqliteVectorStore:
                 continue
             vector = json.loads(vector_raw)
             score = cosine_similarity(query_vector, vector)
+            results.append((item_id, score, metadata))
+        results.sort(key=lambda item: item[1], reverse=True)
+        return results[:top_k]
+
+
+DEFAULT_VECTOR_DIM = 32
+
+
+def sqlite_vec_available() -> bool:
+    try:
+        import sqlite_vec  # noqa: F401
+    except ImportError:
+        return False
+    conn = sqlite3.connect(":memory:")
+    if not hasattr(conn, "enable_load_extension"):
+        return False
+    try:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        conn.execute("SELECT vec_version()").fetchone()
+        return True
+    except Exception:
+        return False
+
+
+def _load_sqlite_vec(conn: sqlite3.Connection) -> None:
+    import sqlite_vec
+
+    if not hasattr(conn, "enable_load_extension"):
+        raise RuntimeError("Python sqlite3 was built without extension loading support")
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
+
+
+class SqliteVecStore:
+    """SQLite + sqlite-vec extension for cosine distance search."""
+
+    def __init__(self, path: Path, dimensions: int = DEFAULT_VECTOR_DIM):
+        self.path = path
+        self.dimensions = dimensions
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self.path))
+        _load_sqlite_vec(self._conn)
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS vectors (
+                item_id TEXT PRIMARY KEY,
+                vector BLOB NOT NULL,
+                metadata TEXT NOT NULL
+            )
+            """
+        )
+        self._conn.commit()
+
+    def _fit_vector(self, vector: list[float]) -> list[float]:
+        if len(vector) == self.dimensions:
+            return vector
+        if len(vector) > self.dimensions:
+            return vector[: self.dimensions]
+        return vector + [0.0] * (self.dimensions - len(vector))
+
+    def upsert(self, item_id: str, vector: list[float], metadata: dict[str, Any]) -> None:
+        from sqlite_vec import serialize_float32
+
+        blob = serialize_float32(self._fit_vector(vector))
+        self._conn.execute(
+            """
+            INSERT INTO vectors (item_id, vector, metadata) VALUES (?, ?, ?)
+            ON CONFLICT(item_id) DO UPDATE SET vector=excluded.vector, metadata=excluded.metadata
+            """,
+            (item_id, blob, json.dumps(metadata)),
+        )
+        self._conn.commit()
+
+    def delete(self, item_id: str) -> None:
+        self._conn.execute("DELETE FROM vectors WHERE item_id = ?", (item_id,))
+        self._conn.commit()
+
+    def search(
+        self,
+        query_vector: list[float],
+        *,
+        top_k: int = 5,
+        metadata_filter: dict[str, Any] | None = None,
+    ) -> list[tuple[str, float, dict[str, Any]]]:
+        from sqlite_vec import serialize_float32
+
+        query_blob = serialize_float32(self._fit_vector(query_vector))
+        results: list[tuple[str, float, dict[str, Any]]] = []
+        for item_id, distance, metadata_raw in self._conn.execute(
+            "SELECT item_id, vec_distance_cosine(?, vector) AS dist, metadata FROM vectors",
+            (query_blob,),
+        ):
+            metadata = json.loads(metadata_raw)
+            if metadata_filter and not _match_filter(metadata, metadata_filter):
+                continue
+            score = 1.0 - float(distance)
             results.append((item_id, score, metadata))
         results.sort(key=lambda item: item[1], reverse=True)
         return results[:top_k]

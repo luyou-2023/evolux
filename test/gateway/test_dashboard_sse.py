@@ -57,3 +57,25 @@ async def test_dashboard_sse_streams_events(evolux_home):
         payload = json.loads(probe_line.split("data: ", 1)[1])
         assert payload["kind"] == "sse_probe"
     runner.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_dashboard_sse_filters_by_session_key(evolux_home):
+    runner = GatewayRunner(
+        home=evolux_home,
+        llm_call=llm_call_adapter(MockLLMClient(default_content="ok")),
+        send_feishu_reply=False,
+    )
+    app = create_gateway_app(runner, evolux_home)
+    emit_activity("match_event", session_key="orchestrator:default:cli:dm:a", detail="keep")
+    emit_activity("skip_event", session_key="orchestrator:default:cli:dm:b", detail="drop")
+
+    async with TestClient(TestServer(app)) as http:
+        resp = await http.get(
+            "/dashboard/events?once=1&session_key=orchestrator%3Adefault%3Acli%3Adm%3Aa"
+        )
+        assert resp.status == 200
+        text = (await resp.content.read(8192)).decode("utf-8")
+        assert "match_event" in text
+        assert "skip_event" not in text
+    runner.shutdown()

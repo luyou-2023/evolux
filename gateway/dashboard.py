@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 from pathlib import Path
 from urllib.parse import quote
 
@@ -132,15 +133,28 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
         """
         return web.Response(text=_page("Session", body), content_type="text/html")
 
-    async def activity(_request: web.Request) -> web.Response:
-        body = """
+    async def activity(request: web.Request) -> web.Response:
+        session_key = request.query.get("session_key", "")
+        events_url = "/dashboard/events"
+        if session_key:
+            events_url = f"/dashboard/events?session_key={quote(session_key, safe='')}"
+        filter_note = (
+            f'<p>Filter: <code>{html.escape(session_key)}</code></p>' if session_key else ""
+        )
+        body = (
+            """
         <h1>Live Activity</h1>
         <p class="status" id="status">Connecting…</p>
+        """
+            + filter_note
+            + """
         <div class="feed" id="feed"></div>
         <script>
           const feed = document.getElementById("feed");
           const status = document.getElementById("status");
-          const source = new EventSource("/dashboard/events");
+          const source = new EventSource("""
+            + json.dumps(events_url)
+            + """);
           function renderEvent(raw) {
             const item = document.createElement("div");
             item.className = "event";
@@ -166,11 +180,13 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
           };
         </script>
         """
+        )
         return web.Response(text=_page("Activity", body), content_type="text/html")
 
     async def events(request: web.Request) -> web.StreamResponse:
         bus = get_activity_bus()
         queue = bus.subscribe()
+        session_filter = request.query.get("session_key") or None
         response = web.StreamResponse(
             status=200,
             headers={
@@ -181,6 +197,8 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
         )
         await response.prepare(request)
         for event in bus.recent(30):
+            if session_filter and event.session_key != session_filter:
+                continue
             await response.write(f"data: {event.to_json()}\n\n".encode("utf-8"))
         if request.query.get("once") == "1":
             return response
@@ -189,6 +207,8 @@ def register_dashboard_routes(app: "web.Application", home: Path) -> None:
                 item = await queue.get()
                 if item is None:
                     break
+                if session_filter and item.session_key != session_filter:
+                    continue
                 await response.write(f"data: {item.to_json()}\n\n".encode("utf-8"))
         finally:
             bus.unsubscribe(queue)

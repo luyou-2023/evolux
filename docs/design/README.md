@@ -28,6 +28,7 @@
 | Phase 8 LLM tools 接线 / Sub-agent MCP 子集 | ✅ 完成 |
 | Phase 9 Dashboard SSE / 路由工具裁剪 | ✅ 完成 |
 | Phase 10 Dashboard 实时 UI / tool_choice / 并行 tool | ✅ 完成 |
+| Phase 11 sqlite-vec / 工具调用测试 / SSE 过滤 | ✅ 完成 |
 
 **实现前必读：**
 

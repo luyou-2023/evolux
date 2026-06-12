@@ -48,8 +48,10 @@ assistants:
 def run_setup(home: Path | None = None) -> int:
     base = home or get_evolux_home()
     base.mkdir(parents=True, exist_ok=True)
-    for sub in ("skills", "memories", "agents", "vector", "logs"):
+    for sub in ("skills", "memories", "agents", "vector", "logs", "state"):
         (base / sub).mkdir(parents=True, exist_ok=True)
+
+    _seed_bundled_skills(base)
 
     config_path = base / "config.yaml"
     if not config_path.exists():
@@ -59,3 +61,25 @@ def run_setup(home: Path | None = None) -> int:
         print(f"Config already exists: {config_path}")
     print(f"EVOLUX_HOME={base}")
     return 0
+
+
+def _seed_bundled_skills(home: Path) -> None:
+    import shutil
+    from pathlib import Path as P
+
+    bundled_roots = [
+        P(__file__).resolve().parents[1] / "skills" / "bundled",
+        P(__file__).resolve().parents[1] / "skills" / "official",
+    ]
+    target_root = home / "skills"
+    target_root.mkdir(parents=True, exist_ok=True)
+    for root in bundled_roots:
+        if not root.exists():
+            continue
+        for skill_dir in root.iterdir():
+            if not skill_dir.is_dir() or not (skill_dir / "SKILL.md").exists():
+                continue
+            dest = target_root / skill_dir.name
+            if dest.exists():
+                continue
+            shutil.copytree(skill_dir, dest)

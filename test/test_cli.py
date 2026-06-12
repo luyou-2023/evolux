@@ -53,6 +53,11 @@ def test_cli_gateway_start_with_feishu(evolux_home):
     assert main(["gateway", "start", "--check"]) == 0
 
 
+def test_cli_acp_check(evolux_home):
+    run_setup(home=evolux_home)
+    assert main(["acp", "start", "--check"]) == 0
+
+
 def test_cli_dashboard_start_check(evolux_home):
     run_setup(home=evolux_home)
     assert main(["dashboard", "start", "--check"]) == 0

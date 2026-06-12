@@ -8,7 +8,6 @@ from typing import Any, Callable
 
 from agent.agent_registry import AgentDefinition, AgentRegistry
 from agent.context_compressor import CompressionConfig, compress_messages
-from agent.mcp_tooling import MCPToolRouter
 from agent.memory_manager import MemoryManager
 from agent.orchestrator import OrchestratorAgent
 from agent.routing import FusionWeights, RoutingContext, SubAgentCandidate, fuse_routing
@@ -44,7 +43,9 @@ class EvoluxAgent:
         self.subagent_index = SubAgentIndex(self.home, registry=self.agent_registry)
         self.memory_manager = MemoryManager(home=self.home, assistant_id=assistant_id)
         self.mcp_manager = MCPManager(home=self.home, settings=self.settings)
-        self.mcp_router = MCPToolRouter(self.mcp_manager)
+        from mcp.registry_bridge import sync_mcp_tools
+
+        sync_mcp_tools(self.mcp_manager)
         self.assistant_registry = AssistantRegistry(home=self.home)
 
         self._tool_context = OrchestratorToolContext(
@@ -58,7 +59,7 @@ class EvoluxAgent:
         )
         combined_tool_executor = tool_executor or build_combined_tool_executor(
             self._tool_context,
-            mcp_router=self.mcp_router,
+            assistant_id=assistant_id,
         )
 
         self.orchestrator = OrchestratorAgent(
@@ -169,7 +170,11 @@ class EvoluxAgent:
             max_iterations=self.settings.subagent_max_iterations,
             system_prompt=agent_def.system_prompt_template,
             skill_instructions=skill_instructions,
-            tool_executor=self.orchestrator.tool_executor,
+            tool_executor=build_combined_tool_executor(
+                self._tool_context,
+                assistant_id=self.assistant_id,
+                subagent=True,
+            ),
         )
         result = subagent.run_task(task, context_slice=context_slice)
         _touch_agent_usage(self.agent_registry, agent_def)

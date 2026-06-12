@@ -35,7 +35,7 @@ where = ["."]
 include = ["agent*", "cli*", "gateway*", "tools*", "mcp*", "skills*", "acp*", "cron*", "locales*", "vector*"]
 
 [tool.setuptools]
-py-modules = ["run_agent", "evolux_state", "evolux_constants", "evolux_env", "evolux_logging"]
+py-modules = ["run_agent", "evolux_state", "evolux_constants", "evolux_env", "evolux_logging", "model_tools", "toolsets"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

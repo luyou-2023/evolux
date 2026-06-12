@@ -9,7 +9,8 @@ from pathlib import Path
 from agent.skill_router import SkillRouter
 from evolux_constants import get_evolux_home
 
-BUNDLED_SKILLS = Path(__file__).resolve().parents[1] / "skills" / "official"
+BUNDLED_SKILLS = Path(__file__).resolve().parents[1] / "skills" / "bundled"
+LEGACY_OFFICIAL = Path(__file__).resolve().parents[1] / "skills" / "official"
 
 
 def add_skills_parser(sub: argparse._SubParsersAction) -> None:
@@ -51,11 +52,10 @@ def run_skills(args: argparse.Namespace, home: Path | None = None) -> int:
 def _install_skill(home: Path, source: str) -> int:
     src = Path(source).expanduser()
     if not src.is_absolute():
-        bundled = BUNDLED_SKILLS / source
-        if bundled.exists():
-            src = bundled
-        elif src.exists():
-            src = src.resolve()
+        for candidate in (BUNDLED_SKILLS / source, LEGACY_OFFICIAL / source, Path(source)):
+            if candidate.exists():
+                src = candidate.resolve()
+                break
         else:
             print(f"Skill not found: {source}")
             print(f"Bundled skills: {_list_bundled_names()}")
@@ -88,7 +88,8 @@ def _install_skill(home: Path, source: str) -> int:
 
 
 def _list_bundled_names() -> str:
-    if not BUNDLED_SKILLS.exists():
-        return "(none)"
-    names = sorted(p.name for p in BUNDLED_SKILLS.iterdir() if p.is_dir())
-    return ", ".join(names) or "(none)"
+    names: set[str] = set()
+    for root in (BUNDLED_SKILLS, LEGACY_OFFICIAL):
+        if root.exists():
+            names.update(p.name for p in root.iterdir() if p.is_dir())
+    return ", ".join(sorted(names)) or "(none)"

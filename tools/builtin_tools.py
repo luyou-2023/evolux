@@ -35,6 +35,7 @@ register(
             },
         },
     },
+    toolset="debug",
 )
 
 register(
@@ -48,4 +49,5 @@ register(
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    toolset="debug",
 )

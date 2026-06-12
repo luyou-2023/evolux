@@ -83,7 +83,17 @@ When `app_id` and `app_secret` are configured, Evolux automatically sends the or
 - `mcp_servers` — MCP stdio servers (lazy discovery, tools prefixed `mcp_*`)
 - `cron.jobs` — scheduled orchestrator prompts
 - `vector.embedding` — `hash` (default) or `openai`
+- `evolux acp start --check` — validate editor tool wiring (Hermes-compatible)
 - `assistants.<id>.routing.fusion` — per-assistant fusion weights
+
+### Hermes-aligned surface
+
+| Area | Evolux | Hermes parity |
+|------|--------|---------------|
+| Tools | `skills_list`, `skill_view`, `memory`, `session_search`, `read_file`, `write_file`, `todo` | same names + toolsets |
+| MCP | `mcp_{server}_{tool}` registered in central registry | same prefix |
+| Skills | bundled `native-mcp`, `github-auth`, `plan`, `git` | copied from Hermes catalog |
+| ACP | `evolux acp start --check`, `hermes-acp` toolset alias | adapter skeleton |
 
 Secrets: `~/.evolux/.env` (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`)
 

@@ -81,6 +81,76 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
     return json.dumps({"error": f"unknown tool: {name}"})
 
 
+ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "identify_skills": {
+        "name": "identify_skills",
+        "description": "Identify relevant skills for a query (triple-route preflight).",
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    "search_subagents": {
+        "name": "search_subagents",
+        "description": "Search subagents with fused routing context.",
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    "list_subagents": {
+        "name": "list_subagents",
+        "description": "List registered subagents for the current assistant.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "create_subagent": {
+        "name": "create_subagent",
+        "description": "Register a new domain subagent.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "name": {"type": "string"},
+                "domain": {"type": "string"},
+                "description": {"type": "string"},
+                "skills": {"type": "array", "items": {"type": "string"}},
+                "toolsets": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["agent_id"],
+        },
+    },
+    "dispatch_subagent": {
+        "name": "dispatch_subagent",
+        "description": "Delegate a task to a registered subagent.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"},
+                "task": {"type": "string"},
+                "skills": {"type": "array", "items": {"type": "string"}},
+                "context_slice": {"type": "string"},
+            },
+            "required": ["agent_id", "task"],
+        },
+    },
+    "retire_subagent": {
+        "name": "retire_subagent",
+        "description": "Retire a subagent and remove it from vector search.",
+        "parameters": {
+            "type": "object",
+            "properties": {"agent_id": {"type": "string"}},
+            "required": ["agent_id"],
+        },
+    },
+}
+
+
+def get_orchestrator_schemas() -> list[dict[str, Any]]:
+    return [{"type": "function", "function": schema} for schema in ORCHESTRATOR_TOOL_SCHEMAS.values()]
+
+
 def build_tool_executor(ctx: OrchestratorToolContext) -> Callable[[dict[str, Any]], str]:
     def _executor(tool_call: dict[str, Any]) -> str:
         name = tool_call.get("name", "")

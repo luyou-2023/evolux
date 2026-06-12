@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from cli.acp_cmd import run_acp_start
 from cli.assistant import add_assistant_parser, run_assistant
 from cli.chat import run_chat
 from cli.cron_cmd import add_cron_parser, run_cron
@@ -29,6 +30,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_skills_parser(sub)
     add_cron_parser(sub)
+
+    acp = sub.add_parser("acp", help="Editor ACP adapter (Hermes-compatible)")
+    acp_sub = acp.add_subparsers(dest="acp_command")
+    acp_start = acp_sub.add_parser("start", help="Start ACP adapter or validate wiring")
+    acp_start.add_argument("--check", action="store_true", help="Validate ACP tool wiring only")
 
     dashboard = sub.add_parser("dashboard", help="Web dashboard commands")
     dashboard_sub = dashboard.add_subparsers(dest="dashboard_command")
@@ -73,6 +79,14 @@ def main(argv: list[str] | None = None) -> int:
             parser.parse_args(["cron", "--help"])
             return 0
         return run_cron(args)
+
+    if args.command == "acp":
+        if args.acp_command == "start":
+            if getattr(args, "check", False):
+                return run_acp_start(foreground=False)
+            return run_acp_start(foreground=True)
+        parser.parse_args(["acp", "--help"])
+        return 0
 
     if args.command == "dashboard":
         if args.dashboard_command == "start":

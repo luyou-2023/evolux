@@ -45,6 +45,7 @@ def run_gateway_start(home: Path | None = None, *, foreground: bool = True) -> i
     host = settings.gateway.host
     port = settings.gateway.port
     print(f"Starting Evolux gateway on http://{host}:{port}")
+    print(f"Dashboard: http://{host}:{port}/dashboard")
     for item in feishu_assistants:
         cfg = item.platforms["feishu"]
         webhook = f"http://{host}:{port}/webhook/feishu/{item.assistant_id}"
@@ -58,6 +59,7 @@ def run_gateway_start(home: Path | None = None, *, foreground: bool = True) -> i
             runner,
             host=host,
             port=port,
+            home=base,
             get_secret=lambda aid: _feishu_secret_for(registry, aid),
         )
 

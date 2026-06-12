@@ -1,4 +1,4 @@
-"""Lazy MCP server configuration and discovery."""
+"""Lazy MCP server configuration and stdio discovery."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 
 from agent.settings import Settings, load_settings
 from evolux_constants import get_evolux_home
+from mcp.stdio_client import MCPStdioClient, MCPStdioError
 
 logger = logging.getLogger("evolux.mcp")
 
@@ -23,12 +24,13 @@ class MCPServerConfig:
 
 
 class MCPManager:
-    """Load MCP configs lazily; discovery is deferred until first use."""
+    """Load MCP configs lazily; spawn stdio clients on first discovery."""
 
     def __init__(self, home: Path | None = None, settings: Settings | None = None):
         self.home = home or get_evolux_home()
         self.settings = settings or load_settings(self.home)
         self._discovered: dict[str, list[dict[str, Any]]] = {}
+        self._clients: dict[str, MCPStdioClient] = {}
 
     def list_servers(self) -> list[MCPServerConfig]:
         servers = []
@@ -51,18 +53,66 @@ class MCPManager:
             return self._discovered[server_name]
 
         config = self.settings.mcp.servers.get(server_name)
-        if not config:
+        if not config or not config.get("enabled", True):
             logger.warning("MCP server not configured: %s", server_name)
             self._discovered[server_name] = []
             return []
 
-        # Phase 4: spawn stdio/HTTP MCP client. For now expose config metadata only.
-        tools = [
-            {
-                "name": f"mcp_{server_name}_placeholder",
-                "description": f"Placeholder for MCP server {server_name} (wire client in Phase 4.1)",
-            }
-        ]
+        command = config.get("command")
+        if command:
+            tools = self._discover_stdio(server_name, str(command), list(config.get("args") or []))
+        elif config.get("url"):
+            logger.info("MCP HTTP transport not implemented for %s; returning empty tool list", server_name)
+            tools = []
+        else:
+            tools = []
+
         self._discovered[server_name] = tools
-        logger.info("MCP discovery stub loaded %d tools for %s", len(tools), server_name)
         return tools
+
+    def call_tool(self, server_name: str, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        client = self._get_client(server_name)
+        if not client:
+            raise KeyError(f"MCP server unavailable: {server_name}")
+        return client.call_tool(tool_name, arguments)
+
+    def close(self) -> None:
+        for client in self._clients.values():
+            client.close()
+        self._clients.clear()
+
+    def _discover_stdio(self, server_name: str, command: str, args: list[str]) -> list[dict[str, Any]]:
+        client = self._get_or_create_client(server_name, command, args)
+        try:
+            raw_tools = client.list_tools()
+        except MCPStdioError as exc:
+            logger.warning("MCP discovery failed for %s: %s", server_name, exc)
+            return []
+
+        tools: list[dict[str, Any]] = []
+        for item in raw_tools:
+            name = str(item.get("name", ""))
+            if not name:
+                continue
+            tools.append(
+                {
+                    "name": f"mcp_{server_name}_{name}",
+                    "mcp_server": server_name,
+                    "mcp_tool": name,
+                    "description": str(item.get("description") or f"MCP tool {name}"),
+                    "inputSchema": item.get("inputSchema") or {"type": "object", "properties": {}},
+                }
+            )
+        logger.info("MCP discovered %d tools for %s", len(tools), server_name)
+        return tools
+
+    def _get_client(self, server_name: str) -> MCPStdioClient | None:
+        config = self.settings.mcp.servers.get(server_name)
+        if not config or not config.get("command"):
+            return None
+        return self._get_or_create_client(server_name, str(config["command"]), list(config.get("args") or []))
+
+    def _get_or_create_client(self, server_name: str, command: str, args: list[str]) -> MCPStdioClient:
+        if server_name not in self._clients:
+            self._clients[server_name] = MCPStdioClient(command, args)
+        return self._clients[server_name]

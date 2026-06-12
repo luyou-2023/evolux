@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,8 +11,11 @@ from typing import Any, Callable
 
 from gateway.assistant_registry import AssistantRegistry
 from gateway.events import MessageEvent
+from gateway.platforms.feishu_api import FeishuAPIClient, build_feishu_client
 from gateway.session import build_session_key
 from run_agent import EvoluxAgent
+
+logger = logging.getLogger("evolux.gateway")
 
 
 @dataclass
@@ -20,6 +24,8 @@ class GatewayResponse:
     assistant_id: str
     content: str | None
     exhausted: bool = False
+    reply_sent: bool = False
+    reply_error: str | None = None
 
 
 class GatewayRunner:
@@ -31,12 +37,15 @@ class GatewayRunner:
         llm_call: Callable[[list[dict[str, Any]]], Any],
         *,
         max_workers: int = 4,
+        send_feishu_reply: bool = True,
     ):
         self.home = home
         self.llm_call = llm_call
+        self.send_feishu_reply = send_feishu_reply
         self.assistant_registry = AssistantRegistry(home=home)
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="evolux-agent")
         self._agents: dict[str, EvoluxAgent] = {}
+        self._feishu_clients: dict[str, FeishuAPIClient] = {}
 
     def _get_agent(self, assistant_id: str) -> EvoluxAgent:
         if assistant_id not in self._agents:
@@ -55,12 +64,44 @@ class GatewayRunner:
             user_message=event.text,
             platform=event.source.platform,
         )
-        return GatewayResponse(
+        response = GatewayResponse(
             session_key=session_key,
             assistant_id=event.assistant_id,
             content=result.content,
             exhausted=result.exhausted,
         )
+        if (
+            self.send_feishu_reply
+            and event.source.platform == "feishu"
+            and response.content
+            and event.source.chat_id
+        ):
+            self._try_send_feishu_reply(event, response)
+        return response
+
+    def _try_send_feishu_reply(self, event: MessageEvent, response: GatewayResponse) -> None:
+        client = self._get_feishu_client(event.assistant_id)
+        if not client:
+            return
+        try:
+            client.send_text(event.source.chat_id, response.content or "")
+            response.reply_sent = True
+        except Exception as exc:
+            response.reply_error = str(exc)
+            logger.warning("Feishu reply failed assistant=%s: %s", event.assistant_id, exc)
+
+    def _get_feishu_client(self, assistant_id: str) -> FeishuAPIClient | None:
+        if assistant_id in self._feishu_clients:
+            return self._feishu_clients[assistant_id]
+
+        assistant = self.assistant_registry.get(assistant_id)
+        if not assistant:
+            return None
+        platform_cfg = assistant.platforms.get("feishu") or {}
+        client = build_feishu_client(platform_cfg)
+        if client:
+            self._feishu_clients[assistant_id] = client
+        return client
 
     async def handle_message(self, event: MessageEvent) -> GatewayResponse:
         loop = asyncio.get_running_loop()

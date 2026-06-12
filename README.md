@@ -9,11 +9,14 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,gateway]"
 
 evolux setup
-export OPENAI_API_KEY=sk-...   # or put in ~/.evolux/.env
+# put DEEPSEEK_API_KEY in ~/.evolux/.env
 
 evolux chat                      # local orchestrator REPL
-evolux gateway start             # Feishu webhook server :8787
+evolux tui                       # terminal status UI
+evolux dashboard start           # web dashboard :8787/dashboard
+evolux gateway start             # Feishu webhook + dashboard
 pytest
+pytest -m live                   # DeepSeek live tests (needs API key)
 ```
 
 ## Architecture
@@ -40,7 +43,7 @@ Client (CLI / Feishu / …)
 | Phase 2 Triple routing + compression | Done |
 | Phase 3 Gateway + multi-assistant | Done |
 | Phase 3.1 Webhook HTTP server | Done |
-| Phase 4 MCP / Cron / polish | Partial |
+| Phase 4 MCP / Cron / Dashboard / Feishu reply | Done |
 
 ## CLI
 
@@ -48,9 +51,11 @@ Client (CLI / Feishu / …)
 |---------|-------------|
 | `evolux setup` | Init `~/.evolux` config and dirs |
 | `evolux chat` | Interactive orchestrator session |
+| `evolux tui` | Terminal assistant/session browser |
+| `evolux dashboard start` | Web dashboard (assistants + sessions) |
 | `evolux assistant list` | List assistants |
 | `evolux assistant bind feishu …` | Bind Feishu app to assistant |
-| `evolux gateway start` | Run webhook server |
+| `evolux gateway start` | Run webhook server + dashboard |
 | `evolux gateway start --check` | Validate config only |
 
 ## Feishu webhook
@@ -61,16 +66,18 @@ Configure assistant then point Feishu event subscription to:
 http://<host>:8787/webhook/feishu/<assistant_id>
 ```
 
+When `app_id` and `app_secret` are configured, Evolux automatically sends the orchestrator reply back to Feishu via Open API.
+
 ## Config (`~/.evolux/config.yaml`)
 
 - `orchestrator.max_iterations` — default 30
 - `subagent.max_iterations` — default 90
-- `llm.model` / `llm.base_url` — OpenAI-compatible API
+- `llm.provider` / `llm.model` — default DeepSeek
 - `gateway.host` / `gateway.port` — default `0.0.0.0:8787`
-- `mcp_servers` — MCP lazy-load config (discovery stub)
+- `mcp_servers` — MCP stdio servers (lazy discovery)
 
-Secrets: `~/.evolux/.env` (`OPENAI_API_KEY`, `EVOLUX_API_KEY`)
+Secrets: `~/.evolux/.env` (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`)
 
 ## Tests
 
-61 pytest cases — TDD workflow, CI on push.
+75+ pytest cases — TDD workflow, CI on push. Live DeepSeek tests: `pytest -m live`.

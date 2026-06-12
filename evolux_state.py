@@ -103,5 +103,25 @@ class SessionDB:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_sessions(
+        self,
+        *,
+        assistant_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        query = """
+            SELECT session_id, session_key, assistant_id, platform, created_at,
+                   (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.session_id) AS message_count
+            FROM sessions s
+        """
+        params: list[Any] = []
+        if assistant_id:
+            query += " WHERE assistant_id = ?"
+            params.append(assistant_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self._conn.execute(query, params).fetchall()
+        return [dict(row) for row in rows]
+
     def close(self) -> None:
         self._conn.close()

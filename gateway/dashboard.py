@@ -1,0 +1,153 @@
+"""Simple web dashboard for assistants and sessions."""
+
+from __future__ import annotations
+
+import html
+from pathlib import Path
+from urllib.parse import quote
+
+from evolux_state import SessionDB
+from gateway.assistant_registry import AssistantRegistry
+
+try:
+    from aiohttp import web
+
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    web = None  # type: ignore[assignment,misc]
+    AIOHTTP_AVAILABLE = False
+
+
+def _page(title: str, body: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{html.escape(title)} · Evolux</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 2rem; color: #111; }}
+    a {{ color: #2563eb; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: 1rem; }}
+    th, td {{ border-bottom: 1px solid #e5e7eb; padding: 0.6rem 0.4rem; text-align: left; vertical-align: top; }}
+    th {{ font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }}
+    .nav {{ margin-bottom: 1.5rem; }}
+    .nav a {{ margin-right: 1rem; }}
+    .badge {{ display: inline-block; background: #eff6ff; color: #1d4ed8; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8rem; }}
+    .msg {{ border-left: 3px solid #dbeafe; padding: 0.5rem 0.75rem; margin: 0.5rem 0; background: #f8fafc; }}
+    .role {{ font-weight: 600; color: #374151; }}
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/dashboard">Overview</a>
+    <a href="/dashboard/assistants">Assistants</a>
+    <a href="/dashboard/sessions">Sessions</a>
+    <a href="/health">Health</a>
+  </div>
+  {body}
+</body>
+</html>"""
+
+
+def register_dashboard_routes(app: "web.Application", home: Path) -> None:
+    if not AIOHTTP_AVAILABLE:
+        raise RuntimeError("aiohttp is required for dashboard")
+
+    async def overview(_request: web.Request) -> web.Response:
+        registry = AssistantRegistry(home=home)
+        db = SessionDB(home=home)
+        assistants = registry.list()
+        sessions = db.list_sessions(limit=10)
+        db.close()
+        body = f"""
+        <h1>Evolux Dashboard</h1>
+        <p>Home: <code>{html.escape(str(home))}</code></p>
+        <p><span class="badge">{len(assistants)} assistants</span>
+           <span class="badge">{len(sessions)} recent sessions</span></p>
+        <h2>Recent Sessions</h2>
+        {_sessions_table(sessions)}
+        """
+        return web.Response(text=_page("Overview", body), content_type="text/html")
+
+    async def assistants(_request: web.Request) -> web.Response:
+        registry = AssistantRegistry(home=home)
+        rows = []
+        for item in registry.list():
+            platforms = ", ".join(item.platforms.keys()) or "-"
+            rows.append(
+                f"<tr><td>{html.escape(item.assistant_id)}</td>"
+                f"<td>{html.escape(item.name)}</td>"
+                f"<td>{html.escape(platforms)}</td></tr>"
+            )
+        body = f"""
+        <h1>Assistants</h1>
+        <table>
+          <thead><tr><th>ID</th><th>Name</th><th>Platforms</th></tr></thead>
+          <tbody>{''.join(rows) or '<tr><td colspan="3">No assistants</td></tr>'}</tbody>
+        </table>
+        """
+        return web.Response(text=_page("Assistants", body), content_type="text/html")
+
+    async def sessions(request: web.Request) -> web.Response:
+        assistant_id = request.query.get("assistant_id")
+        db = SessionDB(home=home)
+        items = db.list_sessions(assistant_id=assistant_id or None, limit=100)
+        db.close()
+        filter_note = f" (assistant={html.escape(assistant_id)})" if assistant_id else ""
+        body = f"""
+        <h1>Sessions{filter_note}</h1>
+        {_sessions_table(items, link_sessions=True)}
+        """
+        return web.Response(text=_page("Sessions", body), content_type="text/html")
+
+    async def session_detail(request: web.Request) -> web.Response:
+        session_key = request.match_info["session_key"]
+        db = SessionDB(home=home)
+        session_id = db.get_session_id_by_key(session_key)
+        if not session_id:
+            db.close()
+            return web.Response(text=_page("Not Found", "<h1>Session not found</h1>"), status=404, content_type="text/html")
+        messages = db.get_messages(session_id)
+        db.close()
+        blocks = []
+        for msg in messages:
+            blocks.append(
+                f'<div class="msg"><div class="role">{html.escape(msg["role"])}</div>'
+                f'<div>{html.escape(msg["content"])}</div></div>'
+            )
+        body = f"""
+        <h1>Session</h1>
+        <p><code>{html.escape(session_key)}</code></p>
+        {''.join(blocks) or '<p>No messages yet.</p>'}
+        """
+        return web.Response(text=_page("Session", body), content_type="text/html")
+
+    app.router.add_get("/dashboard", overview)
+    app.router.add_get("/dashboard/", overview)
+    app.router.add_get("/dashboard/assistants", assistants)
+    app.router.add_get("/dashboard/sessions", sessions)
+    app.router.add_get("/dashboard/sessions/{session_key:.+}", session_detail)
+
+
+def _sessions_table(sessions: list[dict], *, link_sessions: bool = False) -> str:
+    rows = []
+    for item in sessions:
+        key = str(item.get("session_key", ""))
+        key_cell = html.escape(key)
+        if link_sessions:
+            key_cell = f'<a href="/dashboard/sessions/{quote(key, safe="")}">{key_cell}</a>'
+        rows.append(
+            f"<tr><td>{key_cell}</td>"
+            f"<td>{html.escape(str(item.get('assistant_id', '')))}</td>"
+            f"<td>{html.escape(str(item.get('platform', '')))}</td>"
+            f"<td>{item.get('message_count', 0)}</td>"
+            f"<td>{html.escape(str(item.get('created_at', '')))}</td></tr>"
+        )
+    return f"""
+    <table>
+      <thead><tr><th>Session Key</th><th>Assistant</th><th>Platform</th><th>Messages</th><th>Created</th></tr></thead>
+      <tbody>{''.join(rows) or '<tr><td colspan="5">No sessions</td></tr>'}</tbody>
+    </table>
+    """

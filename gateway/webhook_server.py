@@ -1,12 +1,14 @@
-"""Feishu webhook HTTP server."""
+"""Feishu webhook HTTP server and unified gateway app."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+from pathlib import Path
 from typing import Callable
 
+from gateway.dashboard import register_dashboard_routes
 from gateway.platforms.feishu import parse_feishu_webhook, verify_feishu_signature
 from gateway.run import GatewayRunner
 
@@ -21,13 +23,17 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
 
 
-def create_feishu_app(
+def create_gateway_app(
     runner: GatewayRunner,
+    home: Path,
     *,
     get_secret: Callable[[str], str] | None = None,
+    enable_dashboard: bool = True,
 ) -> "web.Application":
     if not AIOHTTP_AVAILABLE:
-        raise RuntimeError("aiohttp is required for webhook server: pip install evolux[gateway]")
+        raise RuntimeError("aiohttp is required for gateway server: pip install evolux[gateway]")
+
+    app = web.Application()
 
     async def feishu_webhook(request: web.Request) -> web.Response:
         assistant_id = request.match_info["assistant_id"]
@@ -50,9 +56,10 @@ def create_feishu_app(
 
         response = await runner.handle_message(parsed)
         logger.info(
-            "handled feishu message assistant=%s session=%s",
+            "handled feishu message assistant=%s session=%s reply_sent=%s",
             assistant_id,
             response.session_key,
+            response.reply_sent,
         )
         return web.json_response(
             {
@@ -60,6 +67,8 @@ def create_feishu_app(
                     "assistant_id": response.assistant_id,
                     "session_key": response.session_key,
                     "content": response.content,
+                    "reply_sent": response.reply_sent,
+                    "reply_error": response.reply_error,
                 }
             }
         )
@@ -67,20 +76,39 @@ def create_feishu_app(
     async def health(_request: web.Request) -> web.Response:
         return web.json_response({"status": "ok", "service": "evolux-gateway"})
 
-    app = web.Application()
     app.router.add_get("/health", health)
     app.router.add_post("/webhook/feishu/{assistant_id}", feishu_webhook)
+    if enable_dashboard:
+        register_dashboard_routes(app, home)
     return app
+
+
+def create_feishu_app(
+    runner: GatewayRunner,
+    *,
+    get_secret: Callable[[str], str] | None = None,
+    home: Path | None = None,
+) -> "web.Application":
+    """Backward-compatible alias that includes dashboard when home is provided."""
+    from evolux_constants import get_evolux_home
+
+    return create_gateway_app(
+        runner,
+        home or get_evolux_home(),
+        get_secret=get_secret,
+        enable_dashboard=True,
+    )
 
 
 async def run_webhook_server(
     runner: GatewayRunner,
     host: str,
     port: int,
+    home: Path,
     *,
     get_secret: Callable[[str], str] | None = None,
 ) -> None:
-    app = create_feishu_app(runner, get_secret=get_secret)
+    app = create_gateway_app(runner, home, get_secret=get_secret)
     runner_ref = runner
 
     async def _cleanup(_app: web.Application) -> None:

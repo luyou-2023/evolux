@@ -7,8 +7,10 @@ import sys
 
 from cli.assistant import add_assistant_parser, run_assistant
 from cli.chat import run_chat
+from cli.dashboard_cmd import run_dashboard_start
 from cli.gateway_cmd import run_gateway_start
 from cli.setup import run_setup
+from cli.tui import run_tui
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +22,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     chat = sub.add_parser("chat", help="Interactive orchestrator chat")
     chat.add_argument("--assistant", default="default", help="Assistant id")
+
+    sub.add_parser("tui", help="Terminal status UI")
+
+    dashboard = sub.add_parser("dashboard", help="Web dashboard commands")
+    dashboard_sub = dashboard.add_subparsers(dest="dashboard_command")
+    dashboard_start = dashboard_sub.add_parser("start", help="Start dashboard HTTP server")
+    dashboard_start.add_argument("--check", action="store_true", help="Validate config and exit")
 
     add_assistant_parser(sub)
 
@@ -36,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "version":
-        print("evolux 0.2.0")
+        print("evolux 0.3.0")
         return 0
 
     if args.command == "setup":
@@ -44,6 +53,17 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "chat":
         return run_chat(assistant_id=args.assistant)
+
+    if args.command == "tui":
+        return run_tui()
+
+    if args.command == "dashboard":
+        if args.dashboard_command == "start":
+            if getattr(args, "check", False):
+                return run_dashboard_start(foreground=False)
+            return run_dashboard_start(foreground=True)
+        parser.parse_args(["dashboard", "--help"])
+        return 0
 
     if args.command == "assistant":
         if not args.assistant_command:

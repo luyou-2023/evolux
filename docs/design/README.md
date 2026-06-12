@@ -20,7 +20,7 @@
 | Phase 2 三重路由与压缩 | ✅ 完成 |
 | Phase 3 Gateway 与多助手 | ✅ 完成 |
 | Phase 3.1 Webhook HTTP 服务 | ✅ 完成 |
-| Phase 4 扩展与打磨 | 🔄 部分完成（LLM/chat/tools/MCP/Cron） |
+| Phase 4 扩展与打磨 | ✅ 完成 |
 
 **实现前必读：**
 

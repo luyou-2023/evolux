@@ -38,6 +38,32 @@ async def test_webhook_server_handles_feishu_message(evolux_home):
 
 
 @pytest.mark.asyncio
+async def test_webhook_server_handles_feishu_card_action(evolux_home):
+    client = MockLLMClient(default_content="continued after clarify")
+    runner = GatewayRunner(home=evolux_home, llm_call=llm_call_adapter(client))
+    app = create_feishu_app(runner)
+
+    payload = {
+        "schema": "2.0",
+        "header": {"event_type": "card.action.trigger"},
+        "event": {
+            "operator": {"open_id": "ou_x"},
+            "action": {"tag": "button", "value": {"option": "evolux", "question": "Pick repo"}},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_1", "chat_type": "p2p"},
+        },
+    }
+
+    async with TestClient(TestServer(app)) as http:
+        resp = await http.post("/webhook/feishu/work-bot", json=payload)
+        assert resp.status == 200
+        body = await resp.json()
+        assert body["toast"]["type"] == "success"
+        assert "evolux" in body["toast"]["content"]
+
+    runner.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_webhook_health(evolux_home):
     runner = GatewayRunner(
         home=evolux_home,

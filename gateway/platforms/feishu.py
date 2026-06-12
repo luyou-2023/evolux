@@ -28,7 +28,10 @@ def parse_feishu_webhook(payload: dict[str, Any], *, assistant_id: str) -> Messa
 
     header = payload.get("header") or {}
     event = payload.get("event") or {}
-    if header.get("event_type") != "im.message.receive_v1":
+    event_type = header.get("event_type")
+    if event_type == "card.action.trigger":
+        return _parse_card_action_trigger(payload, event, assistant_id=assistant_id)
+    if event_type != "im.message.receive_v1":
         return None
 
     message = event.get("message") or {}
@@ -54,6 +57,11 @@ def parse_feishu_webhook(payload: dict[str, Any], *, assistant_id: str) -> Messa
     )
 
 
+def build_card_action_ack(content: str = "已收到您的选择", *, toast_type: str = "success") -> dict[str, Any]:
+    """Feishu card.action.trigger webhook response body."""
+    return {"toast": {"type": toast_type, "content": content}}
+
+
 def build_feishu_text_reply(chat_id: str, text: str) -> dict[str, Any]:
     return {
         "receive_id": chat_id,
@@ -68,6 +76,56 @@ def verify_feishu_signature(timestamp: str, nonce: str, body: bytes, secret: str
     base = f"{timestamp}{nonce}{secret}".encode("utf-8") + body
     digest = b64encode(hashlib.sha256(base).digest()).decode("utf-8")
     return hmac.compare_digest(digest, signature)
+
+
+def _parse_card_action_trigger(
+    payload: dict[str, Any],
+    event: dict[str, Any],
+    *,
+    assistant_id: str,
+) -> MessageEvent:
+    action = event.get("action") or {}
+    value = action.get("value") or {}
+    if not isinstance(value, dict):
+        value = {"option": str(value)}
+
+    option = str(value.get("option") or "").strip()
+    question = str(value.get("question") or "").strip()
+    if question and option:
+        text = f"[确认] {question} → {option}"
+    elif option:
+        text = f"我选择：{option}"
+    else:
+        text = str(value)
+
+    operator = event.get("operator") or {}
+    context = event.get("context") or {}
+    operator_id = operator.get("operator_id") if isinstance(operator.get("operator_id"), dict) else {}
+    open_id = str(
+        operator.get("open_id")
+        or operator_id.get("open_id")
+        or operator.get("user_id")
+        or operator_id.get("user_id")
+        or ""
+    )
+
+    source = SessionSource(
+        platform="feishu",
+        chat_type=_normalize_chat_type(context.get("chat_type") or "p2p"),
+        chat_id=str(context.get("open_chat_id") or ""),
+        user_id=open_id,
+        user_id_alt=str(operator.get("union_id") or operator_id.get("union_id") or "") or None,
+        thread_id=str(context.get("open_message_id") or "") or None,
+    )
+    return MessageEvent(
+        assistant_id=assistant_id,
+        source=source,
+        text=text,
+        message_id=str(context.get("open_message_id") or "") or None,
+        is_card_action=True,
+        card_action_option=option or None,
+        raw=payload,
+    )
 
 
 def _extract_text(content: Any) -> str:

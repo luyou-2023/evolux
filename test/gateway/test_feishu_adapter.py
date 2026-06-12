@@ -1,4 +1,5 @@
 from gateway.platforms.feishu import (
+    build_card_action_ack,
     build_feishu_text_reply,
     parse_feishu_webhook,
     verify_feishu_signature,
@@ -37,6 +38,42 @@ def test_build_feishu_text_reply():
     reply = build_feishu_text_reply("oc_1", "hello")
     assert reply["receive_id"] == "oc_1"
     assert "hello" in reply["content"]
+
+
+def test_parse_feishu_card_action_trigger():
+    payload = {
+        "schema": "2.0",
+        "header": {"event_type": "card.action.trigger"},
+        "event": {
+            "operator": {"open_id": "ou_card", "union_id": "on_card"},
+            "action": {
+                "tag": "button",
+                "value": {
+                    "action": "clarify",
+                    "option": "evolux",
+                    "question": "Which repo?",
+                },
+            },
+            "context": {
+                "open_chat_id": "oc_card",
+                "open_message_id": "om_card",
+                "chat_type": "p2p",
+            },
+        },
+    }
+    event = parse_feishu_webhook(payload, assistant_id="work-bot")
+    assert event.is_card_action is True
+    assert event.card_action_option == "evolux"
+    assert event.text == "[确认] Which repo? → evolux"
+    assert event.source.chat_id == "oc_card"
+    assert event.source.user_id == "ou_card"
+    assert event.source.chat_type == "dm"
+
+
+def test_build_card_action_ack():
+    ack = build_card_action_ack("已选择：evolux")
+    assert ack["toast"]["type"] == "success"
+    assert ack["toast"]["content"] == "已选择：evolux"
 
 
 def test_verify_feishu_signature():

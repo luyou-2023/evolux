@@ -14,4 +14,6 @@ class MessageEvent:
     source: SessionSource
     text: str
     message_id: str | None = None
+    is_card_action: bool = False
+    card_action_option: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from gateway.dashboard import register_dashboard_routes
-from gateway.platforms.feishu import parse_feishu_webhook, verify_feishu_signature
+from gateway.platforms.feishu import build_card_action_ack, parse_feishu_webhook, verify_feishu_signature
 from gateway.run import GatewayRunner
 
 logger = logging.getLogger("evolux.gateway.webhook")
@@ -56,11 +56,17 @@ def create_gateway_app(
 
         response = await runner.handle_message(parsed)
         logger.info(
-            "handled feishu message assistant=%s session=%s reply_sent=%s",
+            "handled feishu %s assistant=%s session=%s reply_sent=%s",
+            "card_action" if parsed.is_card_action else "message",
             assistant_id,
             response.session_key,
             response.reply_sent,
         )
+        if parsed.is_card_action:
+            option = parsed.card_action_option
+            toast = f"已选择：{option}" if option else "已收到您的选择"
+            return web.json_response(build_card_action_ack(toast))
+
         return web.json_response(
             {
                 "evolux": {

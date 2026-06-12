@@ -90,7 +90,7 @@ def build_feishu_clarify_card(clarify: dict[str, Any]) -> dict[str, Any]:
                     "tag": "button",
                     "text": {"tag": "plain_text", "content": label[:20]},
                     "type": "default",
-                    "value": {"option": label},
+                    "value": {"action": "clarify", "option": label, "question": question[:100]},
                 }
             )
         if buttons:

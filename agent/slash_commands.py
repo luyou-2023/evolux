@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from agent.context_compressor import CompressionConfig, compress_messages
+from agent.settings import Settings
 from agent.turn_cancel import clear_turn_cancel, request_turn_cancel
 from evolux_state import SessionDB
 
@@ -24,6 +26,7 @@ class SlashCommandContext:
     platform: str
     session_db: SessionDB
     on_progress: Callable[[str], None] | None = None
+    settings: Settings | None = None
 
 
 @dataclass
@@ -66,14 +69,37 @@ def _notify(ctx: SlashCommandContext, message: str) -> None:
         ctx.on_progress(message)
 
 
+def _compression_config(ctx: SlashCommandContext) -> CompressionConfig:
+    if ctx.settings is not None:
+        return CompressionConfig(keep_recent_turns=ctx.settings.compression.keep_recent_turns)
+    return CompressionConfig()
+
+
+def _tool_names(platform: str) -> list[str]:
+    from agent.tooling import get_agent_tool_definitions
+
+    names: list[str] = []
+    for item in get_agent_tool_definitions(platform=platform):
+        fn = item.get("function") if isinstance(item, dict) else None
+        if isinstance(fn, dict) and fn.get("name"):
+            names.append(str(fn["name"]))
+        elif isinstance(item, dict) and item.get("name"):
+            names.append(str(item["name"]))
+    return sorted(set(names))
+
+
 def _cmd_help(_ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
     lines = [
         f"{MONITOR_PREFIX} · 可用命令（Hermes 兼容子集）：",
         "/help — 显示此帮助",
         "/new, /reset, /clear — 重置当前会话",
         "/stop — 中断正在运行的 Agent 轮次",
-        "/status — 显示会话信息",
+        "/status — 显示会话与模型信息",
+        "/sessions — 列出最近会话",
         "/history [n] — 显示最近消息（默认 6 条）",
+        "/compress [focus] — 手动压缩会话上下文",
+        "/model — 显示当前 LLM 模型",
+        "/tools — 列出当前可用工具",
         "/retry — 重试上一条用户消息",
         "/undo — 撤销上一轮对话",
     ]
@@ -110,6 +136,23 @@ def _cmd_status(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
         f"Platform: {ctx.platform}",
         f"Messages: {count}",
     ]
+    if ctx.settings is not None:
+        lines.append(f"Model: {ctx.settings.llm.provider}/{ctx.settings.llm.model}")
+        lines.append(f"Tools: {len(_tool_names(ctx.platform))}")
+    return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+
+def _cmd_sessions(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
+    items = ctx.session_db.list_sessions(assistant_id=ctx.assistant_id, limit=10)
+    if not items:
+        return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 尚无会话记录。")
+    lines = [f"{MONITOR_PREFIX} · 最近 {len(items)} 个会话："]
+    for item in items:
+        key = str(item.get("session_key") or "")
+        marker = " ← 当前" if key == ctx.session_key else ""
+        count = item.get("message_count", 0)
+        platform = item.get("platform", "")
+        lines.append(f"• {key} ({platform}, {count} msgs){marker}")
     return SlashCommandOutcome(handled=True, reply="\n".join(lines))
 
 
@@ -129,6 +172,73 @@ def _cmd_history(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
         content = str(item["content"] or "").replace("\n", " ")[:120]
         lines.append(f"[{role}] {content}")
     return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+
+def _cmd_compress(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    session_id = ctx.session_db.get_session_id_by_key(ctx.session_key)
+    if not session_id:
+        return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 尚无会话可压缩。")
+    raw_messages = ctx.session_db.get_messages(session_id)
+    if not raw_messages:
+        return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 尚无消息可压缩。")
+
+    focus = args.strip()
+    cfg = _compression_config(ctx)
+    messages = [{"role": m["role"], "content": m["content"]} for m in raw_messages]
+
+    def _summarize(old_messages: list[dict]) -> str:
+        turn_estimate = max(1, len(old_messages) // 2)
+        summary = f"Earlier conversation compressed ({turn_estimate} turns). Details omitted."
+        if focus:
+            summary += f"\nUser focus: {focus}"
+        return summary
+
+    result = compress_messages(messages, cfg, summarize=_summarize if focus else None)
+    if not result.compressed:
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 消息量未超过保留阈值（{cfg.keep_recent_turns} 轮），无需压缩。",
+        )
+
+    ctx.session_db.replace_messages(session_id, result.messages)
+    before = len(raw_messages)
+    after = len(result.messages)
+    message = (
+        f"{MONITOR_PREFIX} · 已压缩会话上下文：{before} 条 → {after} 条，"
+        f"保留最近 {cfg.keep_recent_turns} 轮。"
+    )
+    if focus:
+        message += f" 焦点：{focus}"
+    _notify(ctx, message)
+    return SlashCommandOutcome(handled=True, reply=message)
+
+
+def _cmd_model(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
+    if ctx.settings is None:
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 模型信息不可用。",
+        )
+    llm = ctx.settings.llm
+    lines = [
+        f"{MONITOR_PREFIX} · 当前模型",
+        f"Provider: {llm.provider}",
+        f"Model: {llm.model}",
+        f"Tool choice: {llm.tool_choice}",
+    ]
+    return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+
+def _cmd_tools(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
+    names = _tool_names(ctx.platform)
+    if not names:
+        return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 当前无可用工具。")
+    preview = ", ".join(names[:24])
+    suffix = f" … (+{len(names) - 24})" if len(names) > 24 else ""
+    return SlashCommandOutcome(
+        handled=True,
+        reply=f"{MONITOR_PREFIX} · 可用工具 ({len(names)}): {preview}{suffix}",
+    )
 
 
 def _cmd_retry(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
@@ -158,7 +268,11 @@ _HANDLERS = {
     "new": _cmd_new,
     "stop": _cmd_stop,
     "status": _cmd_status,
+    "sessions": _cmd_sessions,
     "history": _cmd_history,
+    "compress": _cmd_compress,
+    "model": _cmd_model,
+    "tools": _cmd_tools,
     "retry": _cmd_retry,
     "undo": _cmd_undo,
 }

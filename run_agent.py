@@ -208,6 +208,7 @@ class EvoluxAgent:
                 platform=platform,
                 session_db=self.session_db,
                 on_progress=self._progress_callback,
+                settings=self.settings,
             ),
         )
         if slash and slash.handled:

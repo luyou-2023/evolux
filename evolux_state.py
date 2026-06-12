@@ -149,6 +149,17 @@ class SessionDB:
             self._conn.commit()
         return self.create_session(session_key, assistant_id, platform)
 
+    def replace_messages(self, session_id: str, messages: list[dict[str, Any]]) -> None:
+        self._conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        for item in messages:
+            role = str(item.get("role") or "user")
+            content = str(item.get("content") or "")
+            self._conn.execute(
+                "INSERT INTO messages(session_id, role, content) VALUES (?, ?, ?)",
+                (session_id, role, content),
+            )
+        self._conn.commit()
+
     def list_sessions(
         self,
         *,

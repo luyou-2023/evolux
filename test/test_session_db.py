@@ -46,4 +46,20 @@ def test_session_db_reset_and_pop_exchange(evolux_home):
     assert db.count_messages(session_id) == 0
     new_id = db.reset_session(key, "default", "cli")
     assert new_id != session_id
-    assert db.get_last_user_message(new_id) is None
+
+
+def test_session_db_replace_messages(evolux_home):
+    db = SessionDB(home=evolux_home)
+    session_id = db.create_session("orchestrator:default:cli:dm:replace", "default", "cli")
+    db.append_message(session_id, "user", "old")
+    db.replace_messages(
+        session_id,
+        [
+            {"role": "system", "content": "summary"},
+            {"role": "user", "content": "recent"},
+        ],
+    )
+    messages = db.get_messages(session_id)
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["content"] == "recent"

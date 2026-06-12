@@ -12,16 +12,28 @@ from gateway.session import SessionSource, build_session_key
 from run_agent import EvoluxAgent
 
 
-def run_chat(home: Path | None = None, assistant_id: str = "default") -> int:
+def _build_chat_agent(home: Path | None, assistant_id: str):
     base, settings = bootstrap(home)
     setup_logging(base)
     llm_call = create_llm_call(base, settings)
     agent = EvoluxAgent(llm_call=llm_call, home=base, assistant_id=assistant_id, settings=settings)
-
     session_key = build_session_key(
         assistant_id,
         SessionSource(platform="cli", chat_type="dm", chat_id="local"),
     )
+    return base, agent, session_key
+
+
+def run_chat_once(message: str, home: Path | None = None, assistant_id: str = "default") -> int:
+    _, agent, session_key = _build_chat_agent(home, assistant_id)
+    result = agent.run_orchestrator_turn(session_key, message, platform="cli")
+    print(result.content or "")
+    agent.close()
+    return 0
+
+
+def run_chat(home: Path | None = None, assistant_id: str = "default") -> int:
+    _, agent, session_key = _build_chat_agent(home, assistant_id)
 
     print(f"Evolux chat (assistant={assistant_id}). Type /exit to quit.")
     while True:

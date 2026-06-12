@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from acp.entry import main as acp_main
+from acp_adapter.entry import main as acp_main
 
 
 def run_acp_start(*, foreground: bool = True) -> int:

@@ -47,6 +47,16 @@ TOOLSETS: dict[str, dict[str, Any]] = {
         "tools": ["todo"],
         "includes": [],
     },
+    "terminal": {
+        "description": "Local shell execution (Hermes-compatible subset)",
+        "tools": ["terminal"],
+        "includes": [],
+    },
+    "web": {
+        "description": "Web search and page extraction",
+        "tools": ["web_search", "web_extract"],
+        "includes": [],
+    },
     "evolux-orchestrator": {
         "description": "Evolux orchestrator coordination tools",
         "tools": [
@@ -66,7 +76,7 @@ TOOLSETS: dict[str, dict[str, Any]] = {
     "evolux-code": {
         "description": "CLI coding assistant preset",
         "tools": [],
-        "includes": ["file", "skills", "memory", "session_search", "todo"],
+        "includes": ["file", "skills", "memory", "session_search", "todo", "terminal", "web"],
     },
     "evolux-feishu": {
         "description": "Feishu platform preset (doc tools future)",
@@ -83,6 +93,9 @@ TOOLSETS: dict[str, dict[str, Any]] = {
             "memory",
             "session_search",
             "todo",
+            "terminal",
+            "web_search",
+            "web_extract",
             "identify_skills",
             "search_subagents",
             "list_subagents",

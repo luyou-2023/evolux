@@ -14,6 +14,9 @@ TOOL_KIND_MAP: dict[str, ToolKind] = {
     "memory": "other",
     "session_search": "search",
     "todo": "other",
+    "terminal": "execute",
+    "web_search": "fetch",
+    "web_extract": "fetch",
     "identify_skills": "other",
     "search_subagents": "search",
     "list_subagents": "read",
@@ -30,17 +33,11 @@ def get_tool_kind(tool_name: str) -> ToolKind:
 
 
 def build_tool_title(tool_name: str, args: dict[str, Any]) -> str:
+    if tool_name == "terminal":
+        cmd = str(args.get("command", ""))
+        return f"terminal: {cmd[:80]}"
+    if tool_name == "web_search":
+        return f"web search: {args.get('query', '?')}"
     if tool_name == "read_file":
         return f"read: {args.get('path', '?')}"
-    if tool_name == "write_file":
-        return f"write: {args.get('path', '?')}"
-    if tool_name == "skill_view":
-        return f"skill view: {args.get('name', '?')}"
-    if tool_name == "skills_list":
-        return "skills list"
-    if tool_name == "session_search":
-        query = str(args.get("query") or "").strip()
-        return f"session search: {query}" if query else "recent sessions"
-    if tool_name == "dispatch_subagent":
-        return f"dispatch: {args.get('agent_id', '?')}"
     return tool_name

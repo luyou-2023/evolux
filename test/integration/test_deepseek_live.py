@@ -35,3 +35,20 @@ def test_deepseek_orchestrator_turn(deepseek_available, evolux_home):
     assert result.content
     assert len(result.content.strip()) > 4
     agent.close()
+
+
+def test_deepseek_chat_once_with_tools(deepseek_available, evolux_home):
+    llm_call = create_llm_call(evolux_home)
+    agent = EvoluxAgent(llm_call=llm_call, home=evolux_home, assistant_id="default")
+    session_key = build_session_key(
+        "default",
+        SessionSource(platform="cli", chat_type="dm", chat_id="live-tools"),
+    )
+    result = agent.run_orchestrator_turn(
+        session_key,
+        "Reply with exactly one word: OK",
+        platform="cli",
+    )
+    assert result.content
+    assert "OK" in result.content.upper()
+    agent.close()

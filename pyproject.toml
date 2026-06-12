@@ -26,13 +26,16 @@ dev = [
 gateway = [
   "aiohttp==3.13.3",
 ]
+acp = [
+  "agent-client-protocol==0.9.0",
+]
 
 [project.scripts]
 evolux = "cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "cli*", "gateway*", "tools*", "mcp*", "skills*", "acp*", "cron*", "locales*", "vector*"]
+include = ["agent*", "cli*", "gateway*", "tools*", "mcp*", "skills*", "acp_adapter*", "cron*", "locales*", "vector*"]
 
 [tool.setuptools]
 py-modules = ["run_agent", "evolux_state", "evolux_constants", "evolux_env", "evolux_logging", "model_tools", "toolsets"]

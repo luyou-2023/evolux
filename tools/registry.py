@@ -100,6 +100,12 @@ class ToolRegistry:
 
     def clear(self) -> None:
         self._tools.clear()
+        try:
+            from tools import discover as discover_mod
+
+            discover_mod._LOADED = False
+        except ImportError:
+            pass
 
 
 registry = ToolRegistry()

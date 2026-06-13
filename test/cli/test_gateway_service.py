@@ -20,7 +20,7 @@ from gateway.assistant_registry import AssistantRegistry
 
 def test_resolve_evolux_argv_includes_run():
     argv = resolve_evolux_argv("")
-    assert argv[-2:] == ["gateway", "run"]
+    assert argv[-3:] == ["gateway", "run", "--foreground"]
 
 
 def test_generate_systemd_unit_contains_home(evolux_home):
@@ -110,11 +110,34 @@ def test_cli_gateway_run_check(evolux_home):
             "work-bot",
             "--app-id",
             "app1",
+            "--app-secret",
+            "sec1",
             "--mode",
             "webhook",
         ]
     )
     assert main(["gateway", "run", "--check"]) == 0
+
+
+def test_cli_gateway_run_starts_background(evolux_home, monkeypatch):
+    run_setup(home=evolux_home)
+    main(
+        [
+            "assistant",
+            "bind",
+            "feishu",
+            "--id",
+            "work-bot",
+            "--app-id",
+            "app1",
+            "--app-secret",
+            "sec1",
+            "--mode",
+            "shared_hermes",
+        ]
+    )
+    monkeypatch.setattr("cli.gateway_cmd.run_gateway_background", lambda home=None: 0)
+    assert main(["gateway", "run"]) == 0
 
 
 def test_install_gateway_service_writes_unit(evolux_home, monkeypatch, tmp_path):
@@ -128,6 +151,8 @@ def test_install_gateway_service_writes_unit(evolux_home, monkeypatch, tmp_path)
             "work-bot",
             "--app-id",
             "app1",
+            "--app-secret",
+            "sec1",
             "--mode",
             "webhook",
         ]
@@ -153,6 +178,7 @@ def test_install_gateway_service_writes_unit(evolux_home, monkeypatch, tmp_path)
     assert install_gateway_service(home=evolux_home) == 0
     assert unit_path.exists()
     assert "gateway run" in unit_path.read_text(encoding="utf-8")
+    assert "--foreground" in unit_path.read_text(encoding="utf-8")
     assert ["systemctl", "--user", "daemon-reload"] in calls
 
 

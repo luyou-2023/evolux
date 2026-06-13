@@ -221,9 +221,11 @@ class FeishuWebSocketManager:
                 continue
             app_id = str(feishu.get("app_id") or "")
             app_secret = str(feishu.get("app_secret") or "")
+            if not app_id and not app_secret:
+                continue
             if not app_id or not app_secret:
                 logger.warning(
-                    "Skipping Feishu WebSocket assistant=%s: missing app_id/app_secret",
+                    "Skipping Feishu WebSocket assistant=%s: incomplete app_id/app_secret",
                     item.assistant_id,
                 )
                 continue

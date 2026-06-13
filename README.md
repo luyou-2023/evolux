@@ -139,7 +139,8 @@ evolux -p personal setup
 | `evolux dashboard start` | Web UI at `http://localhost:8787/dashboard` |
 | `evolux gateway install` | Install user service (Linux systemd / macOS launchd) |
 | `evolux gateway start` | Start installed background service |
-| `evolux gateway run` | Foreground server (webhook + dashboard + cron) |
+| `evolux gateway run` | Run in background (auto install + start via launchd/systemd) |
+| `evolux gateway run --foreground` | Foreground server (debug; blocks terminal) |
 | `evolux gateway stop` / `restart` / `status` | Service lifecycle |
 | `evolux cron list/create/tick` | Scheduled jobs |
 | `evolux skills list/install/reindex` | Skill management |
@@ -168,7 +169,8 @@ evolux assistant bind feishu --id work-bot --app-id <id> --app-secret <secret> -
 evolux gateway install    # systemd on Linux, launchd on macOS
 evolux gateway start      # background service (includes cron ticker)
 # or for local debugging:
-evolux gateway run        # foreground
+evolux gateway run        # background (launchd on macOS)
+evolux gateway run --foreground  # debug
 ```
 
 **Optional: Webhook mode** (requires a reachable HTTP endpoint):

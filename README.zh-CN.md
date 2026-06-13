@@ -155,7 +155,8 @@ evolux -p personal setup
 | `evolux dashboard start` | Web 面板 `http://localhost:8787/dashboard` |
 | `evolux gateway install` | 安装用户级后台服务（Linux systemd / macOS launchd） |
 | `evolux gateway start` | 启动已安装的后台服务 |
-| `evolux gateway run` | 前台运行（Webhook + Dashboard + Cron） |
+| `evolux gateway run` | **后台运行**（自动 install + start，launchd/systemd） |
+| `evolux gateway run --foreground` | 前台调试（占用终端） |
 | `evolux gateway stop` / `restart` / `status` | 服务生命周期管理 |
 | `evolux cron list/create/tick` | 定时任务管理 |
 | `evolux skills list/install/reindex` | Skill 管理 |
@@ -178,13 +179,14 @@ evolux assistant bind feishu --id work-bot --app-id <id> --app-secret <secret> -
 
 2. 在飞书开放平台 → **事件订阅 → 长连接（WebSocket）**，订阅 `im.message.receive_v1`。
 
-3. 安装并启动 Gateway：
+3. 启动 Gateway（后台）：
 
 ```bash
-evolux gateway install    # systemd (Linux) / launchd (macOS)
-evolux gateway start      # 启动后台服务（含 cron ticker）
-# 或开发调试：
-evolux gateway run        # 前台运行
+evolux gateway run          # macOS launchd / Linux systemd，自动 install + start
+evolux gateway status       # 查看状态
+evolux gateway stop         # 停止
+# 开发调试（占用终端）：
+evolux gateway run --foreground
 ```
 
 **可选：Webhook 模式**（需要可达的 HTTP 地址）：

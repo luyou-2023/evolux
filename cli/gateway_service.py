@@ -7,6 +7,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import sys
 from pathlib import Path
 
 from evolux_constants import EVOLUX_HOME_ENV, EVOLUX_PROFILE_ENV, get_evolux_home
@@ -31,7 +32,7 @@ def resolve_evolux_argv(profile: str = "") -> list[str]:
     argv = [exe] if exe else [sys.executable, "-m", "cli.main"]
     if profile:
         argv.extend(["-p", profile])
-    argv.extend(["gateway", "run"])
+    argv.extend(["gateway", "run", "--foreground"])
     return argv
 
 
@@ -126,6 +127,45 @@ def _active_profile() -> str:
 
 def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=check, capture_output=True, text=True)
+
+
+def run_gateway_background(home: Path | None = None) -> int:
+    """Install (if needed) and start gateway as a user service (launchd/systemd)."""
+    kind = platform_kind()
+    if kind == "unsupported":
+        print(
+            "Background gateway requires macOS (launchd) or Linux (systemd).\n"
+            "Use: evolux gateway run --foreground",
+            file=sys.stderr,
+        )
+        return 1
+
+    base = home or get_evolux_home()
+    if validate_gateway_ready(base) != 0:
+        return 1
+
+    profile = _active_profile()
+    if not service_installed(profile):
+        code = install_gateway_service(home=base, force=False)
+        if code != 0:
+            return code
+
+    code = start_gateway_service()
+    if code != 0:
+        return code
+
+    from agent.runtime import bootstrap
+
+    _, settings = bootstrap(base)
+    host = settings.gateway.host
+    port = settings.gateway.port
+    print(f"Evolux gateway running in background on http://{host}:{port}")
+    print(f"Dashboard: http://{host}:{port}/dashboard")
+    print(f"Logs: {base / 'logs' / 'gateway.stderr.log'}")
+    print("Stop: evolux gateway stop")
+    print("Status: evolux gateway status")
+    print("Foreground debug: evolux gateway run --foreground")
+    return 0
 
 
 def validate_gateway_ready(home: Path) -> int:

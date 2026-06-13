@@ -11,6 +11,7 @@ from agent.runtime import bootstrap, create_llm_call
 from cli.gateway_service import (
     install_gateway_service,
     restart_gateway_service,
+    run_gateway_background,
     start_gateway_service,
     status_gateway_service,
     stop_gateway_service,
@@ -35,8 +36,13 @@ def add_gateway_parser(sub: argparse._SubParsersAction) -> None:
     gateway = sub.add_parser("gateway", help="Gateway commands")
     gateway_sub = gateway.add_subparsers(dest="gateway_command")
 
-    run = gateway_sub.add_parser("run", help="Run gateway in foreground (webhook + dashboard + cron)")
+    run = gateway_sub.add_parser("run", help="Run gateway in background (launchd/systemd)")
     run.add_argument("--check", action="store_true", help="Validate config and exit")
+    run.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run in foreground (blocks terminal; for debugging)",
+    )
 
     start = gateway_sub.add_parser("start", help="Start installed gateway service (systemd/launchd)")
     install = gateway_sub.add_parser(
@@ -126,10 +132,11 @@ def run_gateway_foreground(home: Path | None = None, *, check_only: bool = False
 def run_gateway(args: argparse.Namespace, home: Path | None = None) -> int:
     cmd = args.gateway_command
     if cmd == "run":
-        return run_gateway_foreground(
-            home,
-            check_only=bool(getattr(args, "check", False)),
-        )
+        if bool(getattr(args, "check", False)):
+            return run_gateway_foreground(home, check_only=True)
+        if bool(getattr(args, "foreground", False)):
+            return run_gateway_foreground(home, check_only=False)
+        return run_gateway_background(home)
     if cmd == "start":
         return start_gateway_service()
     if cmd == "install":

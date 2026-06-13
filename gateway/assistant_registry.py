@@ -91,6 +91,21 @@ class AssistantRegistry:
             return default
         raise KeyError(f"no assistant configured for platform: {platform}")
 
+    def resolve_for_feishu_app(self, app_id: str) -> AssistantConfig | None:
+        app_id = str(app_id or "").strip()
+        if not app_id:
+            return None
+        matches: list[AssistantConfig] = []
+        for assistant in self.list():
+            feishu = assistant.platforms.get("feishu") or {}
+            if str(feishu.get("app_id") or "") == app_id:
+                matches.append(assistant)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            return matches[0]
+        return None
+
     def bind_platform(
         self,
         assistant_id: str,

@@ -12,12 +12,16 @@ def test_resolve_feishu_bind_mode_auto_websocket(evolux_home, monkeypatch):
     assert resolve_feishu_bind_mode(requested="auto", home=evolux_home) == "websocket"
 
 
-def test_resolve_feishu_bind_mode_auto_shared_hermes(evolux_home, monkeypatch):
+def test_resolve_feishu_bind_mode_auto_always_websocket(evolux_home, monkeypatch):
     monkeypatch.setattr(
         "gateway.platforms.feishu_hermes.hermes_gateway_running",
         lambda home=None: True,
     )
-    assert resolve_feishu_bind_mode(requested="auto", home=evolux_home) == "shared_hermes"
+    assert resolve_feishu_bind_mode(requested="auto", home=evolux_home) == "websocket"
+
+
+def test_resolve_feishu_bind_mode_explicit_shared_hermes(evolux_home):
+    assert resolve_feishu_bind_mode(requested="shared_hermes", home=evolux_home) == "shared_hermes"
 
 
 def test_feishu_wizard_binds_assistant(evolux_home, monkeypatch):

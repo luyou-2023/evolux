@@ -7,6 +7,7 @@ from agent.session_monitor import (
     ensure_session_monitor_agent,
     format_progress_end,
     format_progress_start,
+    format_turn_summary,
     is_internal_agent,
     turn_start_message,
 )
@@ -50,6 +51,7 @@ def test_session_monitor_hook_emits_progress_update(evolux_home):
         assistant_id="default",
         platform="cli",
         on_progress=messages.append,
+        min_push_interval_seconds=0,
     )
     hook.push(turn_start_message("hello"))
     hook.on_tool_start("1", "dispatch_subagent", {"agent_id": "writer", "task": "write"})
@@ -63,6 +65,42 @@ def test_session_monitor_hook_emits_progress_update(evolux_home):
     assert any(item.kind == "progress_update" for item in recent)
     assert messages
     assert hook.subagent_dispatches == 1
+
+
+def test_session_monitor_skips_nested_tool_spam():
+    messages: list[str] = []
+    hook = SessionMonitorHook(
+        session_key="orchestrator:default:cli:dm:local",
+        assistant_id="default",
+        platform="cli",
+        on_progress=messages.append,
+        nested_agent_id="writer",
+        push_nested_tools=False,
+    )
+    hook.on_tool_start("1", "terminal", {"command": "echo hi"})
+    hook.on_tool_end("1", "terminal", {"command": "echo hi"}, "ok")
+    assert messages == []
+
+
+def test_session_monitor_throttles_low_priority_updates():
+    messages: list[str] = []
+    hook = SessionMonitorHook(
+        session_key="orchestrator:default:cli:dm:local",
+        assistant_id="default",
+        platform="cli",
+        on_progress=messages.append,
+        min_push_interval_seconds=60,
+    )
+    hook.on_tool_start("1", "search_subagents", {"query": "a"})
+    hook.on_tool_start("2", "identify_skills", {"query": "b"})
+    assert len(messages) == 1
+
+
+def test_format_turn_summary():
+    text = format_turn_summary(active=["writer"], completed=1, total=3, elapsed_seconds=42.0)
+    assert "1/3" in text
+    assert "writer" in text
+    assert "42s" in text
 
 
 def test_evolux_agent_bootstraps_session_monitor(evolux_home):

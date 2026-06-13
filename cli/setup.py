@@ -41,6 +41,11 @@ gateway:
 mcp:
   discover_on_startup: false
 
+monitor:
+  min_push_interval_seconds: 12
+  summary_interval_seconds: 45
+  push_nested_tools: false
+
 mcp_servers: {}
 
 sedimentation:

@@ -234,12 +234,12 @@ def _upgrade_feishu_assistants_for_coexistence(
     source: Path,
     hermes_gateway_active: bool,
 ) -> list[str]:
-    """Pick websocket, or shared_hermes when Hermes gateway still owns Feishu."""
+    """Keep websocket mode for Evolux-owned Feishu bots; do not auto-switch to shared_hermes."""
     changed: list[str] = []
     assistants = cfg.get("assistants")
     if not isinstance(assistants, dict):
         return changed
-    target_mode = "shared_hermes" if hermes_gateway_active else "websocket"
+    target_mode = "websocket"
     for assistant_id, assistant_cfg in assistants.items():
         if not isinstance(assistant_cfg, dict):
             continue
@@ -250,7 +250,7 @@ def _upgrade_feishu_assistants_for_coexistence(
         if not isinstance(feishu, dict):
             continue
         current = str(feishu.get("mode") or "webhook").lower()
-        if current != target_mode:
+        if current in {"shared_hermes", "hermes", "shared"}:
             feishu["mode"] = target_mode
             changed.append(f"{assistant_id}:{target_mode}")
     return changed

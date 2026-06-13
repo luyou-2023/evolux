@@ -335,6 +335,9 @@ class EvoluxAgent:
                 assistant_id=self.assistant_id,
                 platform=platform,
                 on_progress=self._progress_callback,
+                min_push_interval_seconds=self.settings.monitor.min_push_interval_seconds,
+                summary_interval_seconds=self.settings.monitor.summary_interval_seconds,
+                push_nested_tools=self.settings.monitor.push_nested_tools,
             )
             hooks.append(monitor_hook)
         if trace is not None:
@@ -479,6 +482,7 @@ class EvoluxAgent:
                     platform=self._platform,
                     on_progress=self._progress_callback,
                     nested_agent_id=agent_id,
+                    push_nested_tools=self.settings.monitor.push_nested_tools,
                 )
             )
         subagent_hook = CombinedToolHook(*subagent_hooks) if subagent_hooks else None

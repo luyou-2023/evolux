@@ -34,10 +34,8 @@ def feishu_register_app_available() -> bool:
 def resolve_feishu_bind_mode(*, requested: str | None = None, home=None) -> str:
     if requested and requested != "auto":
         return requested
-    from gateway.platforms.feishu_hermes import hermes_gateway_running
-
-    if hermes_gateway_running(home):
-        return "shared_hermes"
+    # Evolux assistants should own Feishu WebSocket by default; shared_hermes delegates
+    # replies to Hermes main agent (same session), not the Evolux orchestrator.
     return "websocket"
 
 
@@ -134,7 +132,8 @@ def print_feishu_setup_success(result: FeishuSetupResult, *, home) -> None:
     print(f"  app_id: {result.app_id}")
     print(f"  mode: {result.mode}")
     if result.mode == "shared_hermes":
-        print("  Feishu transport: Hermes gateway (keep Hermes running for Feishu chat)")
+        print("  Feishu transport: Hermes gateway (Hermes 主 Agent 回复，非 Evolux orchestrator)")
+        print("  Tip: 若要用 Evolux 回复，请改用 --mode websocket 并重启 gateway")
     else:
         print("  Next: evolux gateway run")
     print(f"  config: {home / 'config.yaml'}")

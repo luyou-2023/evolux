@@ -36,6 +36,20 @@ def feishu_skips_evolux_transport(platform_config: dict[str, Any]) -> bool:
     return feishu_connection_mode(platform_config) == "shared_hermes"
 
 
+def extract_feishu_app_id(payload: dict[str, Any]) -> str:
+    """Read app_id from Feishu webhook / WS event envelope."""
+    header = payload.get("header") or {}
+    app_id = header.get("app_id")
+    if app_id:
+        return str(app_id)
+    event = payload.get("event") or {}
+    if isinstance(event, dict):
+        nested = event.get("header") or {}
+        if nested.get("app_id"):
+            return str(nested["app_id"])
+    return ""
+
+
 def parse_feishu_webhook(payload: dict[str, Any], *, assistant_id: str) -> MessageEvent | dict[str, Any] | None:
     """Parse Feishu webhook payload into MessageEvent or challenge response."""
     if payload.get("type") == "url_verification":

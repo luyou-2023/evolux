@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Callable
 
 from agent.agent_registry import AgentDefinition, AgentRegistry
@@ -11,6 +12,14 @@ from gateway.activity import emit_activity
 
 SESSION_MONITOR_AGENT_ID = "_session-monitor"
 INTERNAL_AGENT_PREFIX = "_"
+
+HIGH_PRIORITY_TOOLS = frozenset(
+    {
+        "dispatch_subagent",
+        "create_subagent",
+        "clarify",
+    }
+)
 
 
 def is_internal_agent(agent_id: str) -> bool:
@@ -49,29 +58,31 @@ def ensure_session_monitor_agent(registry: AgentRegistry, assistant_id: str) -> 
 
 
 def format_progress_start(name: str, arguments: dict[str, Any], *, nested_agent_id: str = "") -> str | None:
-    prefix = f"📋 监控 · {nested_agent_id} · " if nested_agent_id else "📋 监控 · "
+    if nested_agent_id:
+        return None
+    prefix = "📋 监控 · "
     if name == "dispatch_subagent":
         agent_id = str(arguments.get("agent_id") or "?")
-        task = str(arguments.get("task") or "")[:100]
-        return f"{prefix}委派 **{agent_id}** 执行：{task or '…'}"
+        task = str(arguments.get("task") or "")[:80]
+        return f"{prefix}委派 **{agent_id}** · {task or '…'}"
     if name == "create_subagent":
         return f"{prefix}创建子 Agent **{arguments.get('agent_id', '?')}**"
     if name == "search_subagents":
-        return f"{prefix}检索匹配的子 Agent…"
+        return f"{prefix}检索子 Agent…"
     if name == "identify_skills":
-        return f"{prefix}识别相关 Skill…"
+        return f"{prefix}识别 Skill…"
     if name == "clarify":
         question = str(arguments.get("question") or "")[:80]
-        return f"{prefix}等待用户确认：{question or '…'}"
-    if nested_agent_id:
-        return f"{prefix}{tool_title(name, arguments)}"
+        return f"{prefix}等待确认：{question or '…'}"
     if categorize_tool(name) == "orchestrator":
         return f"{prefix}{tool_title(name, arguments)}"
     return None
 
 
 def format_progress_end(name: str, arguments: dict[str, Any], result: str, *, nested_agent_id: str = "") -> str | None:
-    prefix = f"📋 监控 · {nested_agent_id} · " if nested_agent_id else "📋 监控 · "
+    if nested_agent_id:
+        return None
+    prefix = "📋 监控 · "
     if name == "dispatch_subagent":
         agent_id = str(arguments.get("agent_id") or "?")
         status = _result_status(result)
@@ -83,23 +94,38 @@ def format_progress_end(name: str, arguments: dict[str, Any], result: str, *, ne
         if _looks_like_error(result):
             return f"⚠️ {prefix}创建 **{agent_id}** 失败"
         return f"✅ {prefix}已注册子 Agent **{agent_id}**"
-    if nested_agent_id and categorize_tool(name) in {"mcp", "builtin"}:
-        icon = "✅" if not _looks_like_error(result) else "⚠️"
-        return f"{icon} {prefix}{tool_title(name, arguments)}"
     return None
+
+
+def format_turn_summary(
+    *,
+    active: list[str],
+    completed: int,
+    total: int,
+    elapsed_seconds: float,
+) -> str | None:
+    if total <= 0 and not active:
+        return None
+    done = completed
+    total = max(total, done + len(active))
+    elapsed = int(elapsed_seconds)
+    line = f"📋 进度 {done}/{total} · 已耗时 {elapsed}s"
+    if active:
+        line = f"{line} · 进行中：{', '.join(active[:3])}"
+    return line
 
 
 def turn_start_message(user_message: str) -> str:
     preview = (user_message or "").strip()[:60]
     if preview:
-        return f"📋 监控 · 开始处理：{preview}"
-    return "📋 监控 · 开始处理请求…"
+        return f"📋 监控 · 开始：{preview}"
+    return "📋 监控 · 开始处理…"
 
 
 def turn_end_message(*, subagent_count: int) -> str | None:
     if subagent_count <= 0:
         return None
-    return f"📋 监控 · 本轮协调了 {subagent_count} 个子 Agent，正在汇总回复…"
+    return f"📋 监控 · 已协调 {subagent_count} 个子 Agent，正在汇总回复…"
 
 
 def _result_status(result: str) -> str:
@@ -129,10 +155,10 @@ def _result_summary(result: str) -> str:
 
 def status_label(status: str) -> str:
     if status == "error":
-        return "执行失败"
+        return "失败"
     if status == "exhausted":
         return "迭代耗尽"
-    return "已完成"
+    return "完成"
 
 
 def _looks_like_error(result: str) -> bool:
@@ -151,15 +177,36 @@ class SessionMonitorHook:
         platform: str,
         on_progress: Callable[[str], None] | None = None,
         nested_agent_id: str = "",
+        min_push_interval_seconds: float = 12.0,
+        summary_interval_seconds: float = 45.0,
+        push_nested_tools: bool = False,
     ) -> None:
         self.session_key = session_key
         self.assistant_id = assistant_id
         self.platform = platform
         self._on_progress = on_progress
         self._nested_agent_id = nested_agent_id
+        self._min_push_interval = max(0.0, float(min_push_interval_seconds))
+        self._summary_interval = max(0.0, float(summary_interval_seconds))
+        self._push_nested_tools = push_nested_tools
         self.subagent_dispatches = 0
+        self._turn_started_at = time.monotonic()
+        self._last_push_at = 0.0
+        self._last_summary_at = 0.0
+        self._active_subagents: list[str] = []
+        self._completed_subagents = 0
+        self._planned_subagents = 0
 
-    def push(self, message: str) -> None:
+    def push(self, message: str, *, force: bool = False) -> None:
+        now = time.monotonic()
+        if (
+            not force
+            and self._min_push_interval > 0
+            and self._last_push_at
+            and now - self._last_push_at < self._min_push_interval
+        ):
+            return
+        self._last_push_at = now
         emit_activity(
             "progress_update",
             session_key=self.session_key,
@@ -171,14 +218,48 @@ class SessionMonitorHook:
         if self._on_progress:
             self._on_progress(message)
 
+    def maybe_push_summary(self, *, force: bool = False) -> None:
+        if self._nested_agent_id:
+            return
+        now = time.monotonic()
+        if not force and self._summary_interval > 0:
+            if self._last_summary_at and now - self._last_summary_at < self._summary_interval:
+                return
+        message = format_turn_summary(
+            active=list(self._active_subagents),
+            completed=self._completed_subagents,
+            total=self._planned_subagents,
+            elapsed_seconds=now - self._turn_started_at,
+        )
+        if not message:
+            return
+        self._last_summary_at = now
+        self.push(message, force=True)
+
     def on_tool_start(self, tool_call_id: str, name: str, arguments: dict[str, Any]) -> None:
+        if self._nested_agent_id and not self._push_nested_tools:
+            return
+        if name == "dispatch_subagent" and not self._nested_agent_id:
+            agent_id = str(arguments.get("agent_id") or "?")
+            if agent_id not in self._active_subagents:
+                self._active_subagents.append(agent_id)
+            self._planned_subagents = max(self._planned_subagents, len(self._active_subagents) + self._completed_subagents)
         message = format_progress_start(name, arguments, nested_agent_id=self._nested_agent_id)
         if message:
-            self.push(message)
+            self.push(message, force=name in HIGH_PRIORITY_TOOLS)
 
     def on_tool_end(self, tool_call_id: str, name: str, arguments: dict[str, Any], result: str) -> None:
+        if self._nested_agent_id and not self._push_nested_tools:
+            return
         if name == "dispatch_subagent" and not self._nested_agent_id:
             self.subagent_dispatches += 1
+            agent_id = str(arguments.get("agent_id") or "?")
+            if agent_id in self._active_subagents:
+                self._active_subagents.remove(agent_id)
+            self._completed_subagents += 1
         message = format_progress_end(name, arguments, result, nested_agent_id=self._nested_agent_id)
         if message:
-            self.push(message)
+            self.push(message, force=True)
+            self.maybe_push_summary(force=True)
+        elif name == "dispatch_subagent" and not self._nested_agent_id:
+            self.maybe_push_summary(force=False)

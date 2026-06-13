@@ -75,6 +75,9 @@ class CronSettings:
 class MonitorSettings:
     enabled: bool = True
     push_interim: bool = True
+    min_push_interval_seconds: float = 12.0
+    summary_interval_seconds: float = 45.0
+    push_nested_tools: bool = False
 
 
 @dataclass
@@ -223,6 +226,15 @@ def load_settings(home: Path | None = None) -> Settings:
         settings.monitor = MonitorSettings(
             enabled=bool(monitor.get("enabled", settings.monitor.enabled)),
             push_interim=bool(monitor.get("push_interim", settings.monitor.push_interim)),
+            min_push_interval_seconds=float(
+                monitor.get("min_push_interval_seconds", settings.monitor.min_push_interval_seconds)
+            ),
+            summary_interval_seconds=float(
+                monitor.get("summary_interval_seconds", settings.monitor.summary_interval_seconds)
+            ),
+            push_nested_tools=bool(
+                monitor.get("push_nested_tools", settings.monitor.push_nested_tools)
+            ),
         )
 
     sedimentation = raw.get("sedimentation", {})

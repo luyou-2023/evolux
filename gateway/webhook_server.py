@@ -29,20 +29,32 @@ async def _handle_feishu_webhook_request(
     request: web.Request,
     *,
     runner: GatewayRunner,
-    assistant_id: str,
+    assistant_id: str | None,
     get_secret: Callable[[str], str] | None,
+    registry: Any | None = None,
 ) -> web.Response:
     body = await request.read()
 
-    secret = (get_secret(assistant_id) if get_secret else "") or ""
+    payload = json.loads(body.decode("utf-8"))
+    from gateway.platforms.feishu import extract_feishu_app_id
+
+    resolved_assistant_id = assistant_id
+    if registry is not None:
+        app_id = extract_feishu_app_id(payload)
+        matched = registry.resolve_for_feishu_app(app_id) if app_id else None
+        if matched is not None:
+            resolved_assistant_id = matched.assistant_id
+    if not resolved_assistant_id:
+        return web.json_response({"error": "unknown feishu assistant"}, status=404)
+
+    secret = (get_secret(resolved_assistant_id) if get_secret else "") or ""
     timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
     nonce = request.headers.get("X-Lark-Request-Nonce", "")
     signature = request.headers.get("X-Lark-Signature", "")
     if secret and not verify_feishu_signature(timestamp, nonce, body, secret, signature):
         return web.json_response({"error": "invalid signature"}, status=401)
 
-    payload = json.loads(body.decode("utf-8"))
-    parsed = parse_feishu_webhook(payload, assistant_id=assistant_id)
+    parsed = parse_feishu_webhook(payload, assistant_id=resolved_assistant_id)
     if isinstance(parsed, dict):
         return web.json_response(parsed)
 
@@ -53,7 +65,7 @@ async def _handle_feishu_webhook_request(
     logger.info(
         "handled feishu %s assistant=%s session=%s reply_sent=%s",
         "card_action" if parsed.is_card_action else "message",
-        assistant_id,
+        resolved_assistant_id,
         response.session_key,
         response.reply_sent,
     )
@@ -86,6 +98,7 @@ def register_feishu_webhook_routes(
     runner: GatewayRunner,
     *,
     get_secret: Callable[[str], str] | None = None,
+    registry: Any | None = None,
     hermes_compat_assistant: str | None = None,
 ) -> None:
     async def feishu_webhook(request: web.Request) -> web.Response:
@@ -95,11 +108,12 @@ def register_feishu_webhook_routes(
             runner=runner,
             assistant_id=assistant_id,
             get_secret=get_secret,
+            registry=registry,
         )
 
     app.router.add_post("/webhook/feishu/{assistant_id}", feishu_webhook)
 
-    if hermes_compat_assistant:
+    if hermes_compat_assistant or registry is not None:
 
         async def hermes_feishu_webhook(request: web.Request) -> web.Response:
             return await _handle_feishu_webhook_request(
@@ -107,6 +121,7 @@ def register_feishu_webhook_routes(
                 runner=runner,
                 assistant_id=hermes_compat_assistant,
                 get_secret=get_secret,
+                registry=registry,
             )
 
         app.router.add_post(HERMES_DEFAULT_FEISHU_WEBHOOK_PATH, hermes_feishu_webhook)
@@ -120,6 +135,7 @@ def create_gateway_app(
     enable_dashboard: bool = True,
     hermes_compat_assistant: str | None = None,
     include_feishu_webhooks: bool = True,
+    registry: Any | None = None,
 ) -> "web.Application":
     if not AIOHTTP_AVAILABLE:
         raise RuntimeError("aiohttp is required for gateway server: pip install evolux[gateway]")
@@ -135,6 +151,7 @@ def create_gateway_app(
             app,
             runner,
             get_secret=get_secret,
+            registry=registry,
             hermes_compat_assistant=hermes_compat_assistant,
         )
     if enable_dashboard:
@@ -159,37 +176,40 @@ def create_feishu_app(
     )
 
 
-def _needs_feishu_webhook_server(registry: Any) -> bool:
+def _needs_feishu_webhook_server(registry: Any, *, hermes_compat: bool = True) -> bool:
     from gateway.platforms.feishu import feishu_connection_mode, feishu_skips_evolux_transport
 
+    has_webhook = False
+    has_feishu_app = False
     for item in registry.list():
         feishu = item.platforms.get("feishu") or {}
         if "feishu" not in item.platforms:
             continue
+        if feishu.get("app_id"):
+            has_feishu_app = True
         if feishu_skips_evolux_transport(feishu):
             continue
         if feishu_connection_mode(feishu) == "webhook":
-            return True
-    return False
+            has_webhook = True
+    return has_webhook or (hermes_compat and has_feishu_app)
 
 
 def _default_hermes_compat_assistant(registry: Any, *, hermes_compat: bool) -> str | None:
     if not hermes_compat:
         return None
-    from gateway.platforms.feishu import feishu_connection_mode, feishu_skips_evolux_transport
+    from gateway.platforms.feishu import feishu_skips_evolux_transport
 
-    webhook_assistants = []
+    feishu_assistants: list[str] = []
     for item in registry.list():
         feishu = item.platforms.get("feishu") or {}
-        if "feishu" not in item.platforms:
+        if "feishu" not in item.platforms or not feishu.get("app_id"):
             continue
         if feishu_skips_evolux_transport(feishu):
             continue
-        if feishu_connection_mode(feishu) == "webhook":
-            webhook_assistants.append(item.assistant_id)
-    if len(webhook_assistants) == 1:
-        return webhook_assistants[0]
-    return webhook_assistants[0] if webhook_assistants else None
+        feishu_assistants.append(item.assistant_id)
+    if len(feishu_assistants) == 1:
+        return feishu_assistants[0]
+    return feishu_assistants[0] if feishu_assistants else None
 
 
 async def run_webhook_server(
@@ -210,9 +230,10 @@ async def run_webhook_server(
 
     assistant_registry = registry or AssistantRegistry(home=home)
     settings = load_settings(home)
+    compat_enabled = hermes_compat if hermes_compat is not None else settings.gateway.hermes_compat
     compat_assistant = _default_hermes_compat_assistant(
         assistant_registry,
-        hermes_compat=hermes_compat if hermes_compat is not None else settings.gateway.hermes_compat,
+        hermes_compat=compat_enabled,
     )
     webhook_host = feishu_webhook_host or settings.gateway.feishu_webhook_host
     webhook_port = (
@@ -225,7 +246,7 @@ async def run_webhook_server(
         bool(webhook_port)
         and webhook_port > 0
         and webhook_port != port
-        and _needs_feishu_webhook_server(assistant_registry)
+        and _needs_feishu_webhook_server(assistant_registry, hermes_compat=compat_enabled)
     )
     main_includes_webhooks = not use_dedicated_feishu_port
 
@@ -233,6 +254,7 @@ async def run_webhook_server(
         runner,
         home,
         get_secret=get_secret,
+        registry=assistant_registry,
         hermes_compat_assistant=compat_assistant if main_includes_webhooks else None,
         include_feishu_webhooks=main_includes_webhooks,
     )
@@ -259,6 +281,7 @@ async def run_webhook_server(
             home,
             get_secret=get_secret,
             enable_dashboard=False,
+            registry=assistant_registry,
             hermes_compat_assistant=compat_assistant,
             include_feishu_webhooks=True,
         )

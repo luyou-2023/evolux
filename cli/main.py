@@ -11,7 +11,7 @@ from cli.chat import run_chat, run_chat_once
 from cli.completion import run_completion
 from cli.cron_cmd import add_cron_parser, run_cron
 from cli.dashboard_cmd import run_dashboard_start
-from cli.gateway_cmd import run_gateway_start
+from cli.gateway_cmd import add_gateway_parser, run_gateway
 from cli.migrate_cmd import add_migrate_parser, run_migrate
 from cli.setup import run_setup
 from cli.skills_cmd import add_skills_parser, run_skills
@@ -75,11 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_assistant_parser(sub)
     add_migrate_parser(sub)
     add_uninstall_parser(sub)
-
-    gateway = sub.add_parser("gateway", help="Gateway commands")
-    gateway_sub = gateway.add_subparsers(dest="gateway_command")
-    gateway_start = gateway_sub.add_parser("start", help="Start messaging gateway")
-    gateway_start.add_argument("--check", action="store_true", help="Validate config and exit")
+    add_gateway_parser(sub)
 
     return parser
 
@@ -161,12 +157,10 @@ def main(argv: list[str] | None = None) -> int:
         return run_assistant(args)
 
     if args.command == "gateway":
-        if args.gateway_command == "start":
-            if getattr(args, "check", False):
-                return run_gateway_start(foreground=False)
-            return run_gateway_start(foreground=True)
-        parser.parse_args(["gateway", "--help"])
-        return 0
+        if not args.gateway_command:
+            parser.parse_args(["gateway", "--help"])
+            return 0
+        return run_gateway(args)
 
     if args.command == "migrate":
         if not args.migrate_command:

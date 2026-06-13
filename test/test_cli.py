@@ -42,15 +42,15 @@ def test_cli_assistant_bind_feishu(evolux_home):
     assert cfg.platforms["feishu"]["app_id"] == "cli_app"
 
 
-def test_cli_gateway_start_requires_feishu(evolux_home):
+def test_cli_gateway_run_requires_feishu(evolux_home):
     run_setup(home=evolux_home)
-    assert main(["gateway", "start"]) == 1
+    assert main(["gateway", "run"]) == 1
 
 
-def test_cli_gateway_start_with_feishu(evolux_home):
+def test_cli_gateway_run_check(evolux_home):
     run_setup(home=evolux_home)
     main(["assistant", "bind", "feishu", "--id", "work-bot", "--app-id", "app1"])
-    assert main(["gateway", "start", "--check"]) == 0
+    assert main(["gateway", "run", "--check"]) == 0
 
 
 def test_cli_acp_check(evolux_home):

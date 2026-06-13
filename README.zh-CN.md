@@ -146,7 +146,10 @@ evolux -p personal setup
 | `evolux chat --trace` | 显示编排 trace |
 | `evolux tui` | 终端会话 / 助手浏览 |
 | `evolux dashboard start` | Web 面板 `http://localhost:8787/dashboard` |
-| `evolux gateway start` | 飞书 Webhook + Dashboard |
+| `evolux gateway install` | 安装用户级后台服务（Linux systemd / macOS launchd） |
+| `evolux gateway start` | 启动已安装的后台服务 |
+| `evolux gateway run` | 前台运行（Webhook + Dashboard + Cron） |
+| `evolux gateway stop` / `restart` / `status` | 服务生命周期管理 |
 | `evolux cron list/create/tick` | 定时任务管理 |
 | `evolux skills list/install/reindex` | Skill 管理 |
 | `evolux assistant list` | 多助手列表 |
@@ -165,7 +168,14 @@ evolux -p personal setup
 http://<你的主机>:8787/webhook/feishu/<assistant_id>
 ```
 
-3. 启动 Gateway：`evolux gateway start`
+3. 安装并启动 Gateway（Hermes 风格）：
+
+```bash
+evolux gateway install    # systemd (Linux) / launchd (macOS)
+evolux gateway start      # 启动后台服务（含 cron ticker）
+# 或开发调试：
+evolux gateway run        # 前台运行
+```
 
 主控回复会自动回传飞书；协调进度、clarify 卡片、slash 命令在飞书内可用。
 

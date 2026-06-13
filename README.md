@@ -137,7 +137,10 @@ evolux -p personal setup
 | `evolux chat --trace` | Orchestration trace on stderr |
 | `evolux tui` | Terminal session / assistant browser |
 | `evolux dashboard start` | Web UI at `http://localhost:8787/dashboard` |
-| `evolux gateway start` | Feishu webhook + dashboard |
+| `evolux gateway install` | Install user service (Linux systemd / macOS launchd) |
+| `evolux gateway start` | Start installed background service |
+| `evolux gateway run` | Foreground server (webhook + dashboard + cron) |
+| `evolux gateway stop` / `restart` / `status` | Service lifecycle |
 | `evolux cron list/create/tick` | Scheduled jobs |
 | `evolux skills list/install/reindex` | Skill management |
 | `evolux assistant list` | Multi-assistant list |
@@ -156,7 +159,14 @@ evolux -p personal setup
 http://<your-host>:8787/webhook/feishu/<assistant_id>
 ```
 
-3. Start gateway: `evolux gateway start`
+3. Install and start the gateway (Hermes-style):
+
+```bash
+evolux gateway install    # systemd on Linux, launchd on macOS
+evolux gateway start      # background service (includes cron ticker)
+# or for local debugging:
+evolux gateway run        # foreground
+```
 
 Replies, coordination progress, clarify cards, and slash commands work inside Feishu.
 

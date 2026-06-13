@@ -59,6 +59,8 @@ def test_cli_gateway_run_check(evolux_home):
             "work-bot",
             "--app-id",
             "app1",
+            "--app-secret",
+            "secret1",
             "--mode",
             "webhook",
         ]

@@ -120,11 +120,15 @@ evolux chat
 # 3. 看协调过程（工具 / 子 Agent / MCP）
 evolux chat --trace
 
-# 4. 安装 Skill 并重建索引
+# 4. 飞书机器人 — 扫码/链接一键创建并写入 config
+evolux feishu setup --assistant default
+# 或: evolux assistant bind feishu --wizard --id work-bot
+
+# 5. 安装 Skill 并重建索引
 evolux skills install git
 evolux skills reindex
 
-# 5. 定时任务（Hermes 兼容）
+# 6. 定时任务（Hermes 兼容）
 evolux cron create "every 2h" "检查服务健康并摘要" --name health
 evolux cron list
 ```

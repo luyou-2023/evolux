@@ -108,3 +108,24 @@ class AssistantRegistry:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
         self.reload()
+
+    def ensure_assistant(self, assistant_id: str, *, name: str | None = None) -> None:
+        """Create assistant entry if missing (CLI platform by default)."""
+        config_path = self.home / "config.yaml"
+        raw: dict[str, Any] = {}
+        if config_path.exists():
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+
+        assistants = raw.setdefault("assistants", {})
+        if assistant_id not in assistants:
+            assistants[assistant_id] = {
+                "name": name or assistant_id,
+                "platforms": {"cli": {}},
+            }
+        elif name:
+            entry = assistants[assistant_id]
+            if isinstance(entry, dict):
+                entry["name"] = name
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.safe_dump(raw, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        self.reload()

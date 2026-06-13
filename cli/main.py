@@ -11,6 +11,7 @@ from cli.chat import run_chat, run_chat_once
 from cli.completion import run_completion
 from cli.cron_cmd import add_cron_parser, run_cron
 from cli.dashboard_cmd import run_dashboard_start
+from cli.feishu_cmd import add_feishu_parser, run_feishu
 from cli.gateway_cmd import add_gateway_parser, run_gateway
 from cli.migrate_cmd import add_migrate_parser, run_migrate
 from cli.setup import run_setup
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard_start.add_argument("--check", action="store_true", help="Validate config and exit")
 
     add_assistant_parser(sub)
+    add_feishu_parser(sub)
     add_migrate_parser(sub)
     add_uninstall_parser(sub)
     add_gateway_parser(sub)
@@ -155,6 +157,12 @@ def main(argv: list[str] | None = None) -> int:
             parser.parse_args([*(argv or sys.argv[1:]), "--help"])
             return 0
         return run_assistant(args)
+
+    if args.command == "feishu":
+        if not args.feishu_command:
+            parser.parse_args(["feishu", "--help"])
+            return 0
+        return run_feishu(args)
 
     if args.command == "gateway":
         if not args.gateway_command:

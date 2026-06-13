@@ -160,7 +160,7 @@ run_setup
 
 echo ""
 log_ok "Evolux installed"
+echo "  evolux chat          # interactive CLI; /exit saves session and stops"
 echo "  evolux setup"
 echo "  evolux migrate detect"
-echo "  evolux chat"
 echo "  EVOLUX_HOME=$EVOLUX_HOME"

@@ -111,8 +111,11 @@ evolux uninstall --full --yes # 完全清除
 # 1. 初始化（若尚未 setup）
 evolux setup
 
-# 2. 对话 — 主控会自动路由到子 Agent
+# 2. 对话 — 交互模式，/exit 退出；session 写入 ~/.evolux/state.db（与 Hermes 飞书 session 独立）
 evolux chat
+
+# 单轮脚本（session 仍会落盘，但进程立即退出）
+# evolux chat --once "你好"
 
 # 3. 看协调过程（工具 / 子 Agent / MCP）
 evolux chat --trace

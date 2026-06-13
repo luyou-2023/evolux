@@ -8,6 +8,12 @@ from pathlib import Path
 from agent.runtime import bootstrap, create_llm_call
 from agent.turn_trace import TurnTrace
 from cli.chat_completion import install_slash_completer
+from cli.chat_session import (
+    cli_session_message_count,
+    format_cli_exit_line,
+    format_cli_startup_lines,
+    format_once_followup_hint,
+)
 from cli.trace_render import render_trace
 from evolux_constants import get_evolux_home
 from evolux_logging import setup_logging
@@ -40,7 +46,7 @@ def run_chat_once(
     *,
     trace: bool = False,
 ) -> int:
-    _, agent, session_key, progress_callback = _build_chat_agent(home, assistant_id)
+    base, agent, session_key, progress_callback = _build_chat_agent(home, assistant_id)
     turn_trace = TurnTrace() if trace else None
     result = agent.run_orchestrator_turn(
         session_key,
@@ -52,6 +58,8 @@ def run_chat_once(
     if turn_trace:
         render_trace(turn_trace)
     print(result.content or "")
+    if result.content:
+        print(format_once_followup_hint(base), file=sys.stderr)
     agent.close()
     return 0
 
@@ -62,9 +70,15 @@ def run_chat(
     *,
     trace: bool = False,
 ) -> int:
-    _, agent, session_key, progress_callback = _build_chat_agent(home, assistant_id)
-
-    print(f"Evolux chat (assistant={assistant_id}). Type /exit to quit.")
+    base, agent, session_key, progress_callback = _build_chat_agent(home, assistant_id)
+    message_count = cli_session_message_count(agent.session_db, session_key)
+    for line in format_cli_startup_lines(
+        assistant_id=assistant_id,
+        session_key=session_key,
+        message_count=message_count,
+        home=base,
+    ):
+        print(line)
     if install_slash_completer():
         print("Tip: Tab completes /slash commands.", file=sys.stderr)
     if trace:
@@ -99,5 +113,6 @@ def run_chat(
             continue
         print(f"bot> {result.content or '(no response)'}")
 
+    print(format_cli_exit_line(base), file=sys.stderr)
     agent.close()
     return 0

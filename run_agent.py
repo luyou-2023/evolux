@@ -190,6 +190,16 @@ class EvoluxAgent:
                 prefix.append({"role": "system", "content": "\n\n".join(memory_parts)})
         if routing.prompt_block:
             prefix.append({"role": "system", "content": routing.prompt_block})
+        skill_names = routing.suggested_skills[:3]
+        if skill_names:
+            skill_block = self.skill_router.load_for_execution(skill_names)
+            if skill_block.strip():
+                prefix.append(
+                    {
+                        "role": "system",
+                        "content": f"## 主控预加载 Skill（{', '.join(skill_names)}）\n{skill_block}",
+                    }
+                )
         return prefix
 
     def run_orchestrator_turn(

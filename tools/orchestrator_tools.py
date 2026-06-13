@@ -10,6 +10,7 @@ from typing import Any, Callable
 from agent.agent_registry import AgentDefinition
 from agent.mcp_proposals import MCPProposal, MCPProposalStore
 from agent.planning_state import TurnPlanningState
+from agent.routing import RoutingContext, routing_decision_hints
 from agent.sedimentation import build_default_system_prompt, default_toolsets_for_domain
 from agent.session_monitor import is_internal_agent
 
@@ -57,6 +58,8 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
         payload = {
             "skill_candidates": [s.__dict__ for s in routing.skill_candidates],
             "fused_ranking": [f.__dict__ for f in routing.fused_ranking],
+            "suggested_skills": routing.suggested_skills,
+            "decision_hints": routing_decision_hints(routing),
             "prompt_block": routing.prompt_block,
         }
         return json.dumps(payload, ensure_ascii=False)
@@ -237,7 +240,7 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
 ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "identify_skills": {
         "name": "identify_skills",
-        "description": "Identify relevant skills for a query (triple-route preflight).",
+        "description": "识别与查询相关的 Skill（主控自身可用 skill_view；委派时可传给子 Agent）。",
         "parameters": {
             "type": "object",
             "properties": {"query": {"type": "string"}},
@@ -246,7 +249,10 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "search_subagents": {
         "name": "search_subagents",
-        "description": "Search subagents with fused routing context.",
+        "description": (
+            "检索已有专家子 Agent 及融合排序；返回 decision_hints 供主控判断 "
+            "dispatch 已有专家 vs create 新专家 vs 直接回答。"
+        ),
         "parameters": {
             "type": "object",
             "properties": {"query": {"type": "string"}},
@@ -255,14 +261,14 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "list_subagents": {
         "name": "list_subagents",
-        "description": "List registered subagents for the current assistant.",
+        "description": "列出已注册专家（子 Agent 目录）；委派前可先查看是否已有合适专家。",
         "parameters": {"type": "object", "properties": {}},
     },
     "create_subagent": {
         "name": "create_subagent",
         "description": (
-            "Register a new domain expert subagent with skills, toolsets, MCP, and system prompt. "
-            "Omit skills/toolsets to inherit from current routing suggestions."
+            "注册新的领域专家（仅当 list/search 无合适专家且任务需重复执行或专用 toolsets/MCP 时）。"
+            "一次性问答或解释请勿创建。"
         ),
         "parameters": {
             "type": "object",
@@ -281,7 +287,10 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "dispatch_subagent": {
         "name": "dispatch_subagent",
-        "description": "Delegate a task to a registered subagent.",
+        "description": (
+            "委派任务给已注册专家执行（子 Agent 类似高级工具）。"
+            "主控负责理解需求与汇总；专家返回结构化结果。"
+        ),
         "parameters": {
             "type": "object",
             "properties": {

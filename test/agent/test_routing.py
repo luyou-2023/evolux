@@ -3,6 +3,7 @@ from agent.routing import (
     SkillCandidate,
     SubAgentCandidate,
     fuse_routing,
+    routing_decision_hints,
     skill_overlap,
 )
 
@@ -28,3 +29,19 @@ def test_fuse_routing_prompt_contains_skill_and_agent():
     result = fuse_routing(skills, agents)
     assert "git" in result.prompt_block
     assert "code-expert" in result.prompt_block
+    assert "供主控参考" in result.prompt_block
+
+
+def test_routing_decision_hints_reuse_strong_match():
+    skills = [SkillCandidate("git", 0.9)]
+    agents = [SubAgentCandidate("code-expert", vector_score=0.9, skills=["git"])]
+    ctx = fuse_routing(skills, agents)
+    hints = routing_decision_hints(ctx)
+    assert any(h.startswith("reuse_candidate: code-expert") for h in hints)
+    assert any(h.startswith("orchestrator_skills:") for h in hints)
+
+
+def test_routing_decision_hints_no_expert():
+    ctx = fuse_routing([], [])
+    hints = routing_decision_hints(ctx)
+    assert hints == ["no_registered_expert: create_subagent only if execution-heavy and repeatable"]

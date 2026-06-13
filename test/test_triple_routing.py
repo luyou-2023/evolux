@@ -51,6 +51,7 @@ def test_run_orchestrator_turn_injects_routing_block(evolux_home):
     assert captured["messages"] is not None
     system_contents = [m["content"] for m in captured["messages"] if m["role"] == "system"]
     assert any("路由预检" in content for content in system_contents)
+    assert any("主控 Agent" in content for content in system_contents)
     agent.close()
 
 

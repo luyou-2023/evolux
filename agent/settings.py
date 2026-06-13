@@ -91,7 +91,7 @@ class SedimentationSettings:
 class ExpertPromotionSettings:
     enabled: bool = True
     min_repeat: int = 2
-    auto_create: bool = True
+    auto_create: bool = False
     score_threshold: float = 0.35
 
 

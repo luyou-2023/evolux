@@ -98,9 +98,15 @@ def fuse_routing(
 
 
 def format_routing_prompt(ctx: RoutingContext) -> str:
-    lines = ["## 路由预检（系统自动生成，供协调决策参考）", ""]
+    lines = [
+        "## 路由预检（系统自动生成，供主控参考 — 由你决定是否委派）",
+        "",
+        "问答/解释类请求：优先用主控 LLM + 下方 Skill 直接回答。",
+        "执行/MCP/多步任务：再考虑 dispatch 或 create 专家。",
+        "",
+    ]
 
-    lines.append("### 识别到的 Skill")
+    lines.append("### 识别到的 Skill（主控可 skill_view 或直接遵循已注入指令）")
     if ctx.skill_candidates:
         for idx, skill in enumerate(ctx.skill_candidates[:5], start=1):
             lines.append(f"{idx}. {skill.skill_name} ({skill.score:.2f}) — {skill.description}")
@@ -108,27 +114,45 @@ def format_routing_prompt(ctx: RoutingContext) -> str:
         lines.append("- （无匹配）")
     lines.append("")
 
-    lines.append("### 候选子 Agent（融合排序）")
+    lines.append("### 已有专家（子 Agent，按需 dispatch）")
     if ctx.fused_ranking:
         for idx, item in enumerate(ctx.fused_ranking[:5], start=1):
             skills = ", ".join(item.skills) or "-"
+            strength = "强匹配" if item.final_score >= 0.35 else "弱匹配"
             lines.append(
-                f"{idx}. {item.agent_id} ({item.final_score:.2f}) — skills: [{skills}]"
+                f"{idx}. {item.agent_id} ({item.final_score:.2f}, {strength}) — skills: [{skills}]"
             )
     else:
-        lines.append("- （无匹配）")
+        lines.append("- （尚无注册专家）")
     lines.append("")
 
-    if ctx.suggested_skills:
-        lines.append("### 路由建议")
-        top_agent = ctx.fused_ranking[0].agent_id if ctx.fused_ranking else None
-        if top_agent:
-            lines.append(
-                f"- 优先委派 {top_agent}，预加载 skills: [{', '.join(ctx.suggested_skills[:3])}]"
-            )
-        else:
-            lines.append(
-                f"- 建议创建子 Agent，绑定 skills: [{', '.join(ctx.suggested_skills[:3])}]"
-            )
+    lines.append("### 协调提示（非强制）")
+    if ctx.fused_ranking and ctx.fused_ranking[0].final_score >= 0.35:
+        top = ctx.fused_ranking[0]
+        lines.append(
+            f"- 若需执行：可考虑 dispatch `{top.agent_id}`；若只是解释/讨论，请主控直接回答"
+        )
+    elif ctx.suggested_skills:
+        lines.append(
+            f"- 无强匹配专家；执行类任务可 create_subagent 并绑定 skills: "
+            f"[{', '.join(ctx.suggested_skills[:3])}]"
+        )
+    else:
+        lines.append("- 无强信号；按任务类型自行判断直接回复或委派")
 
     return "\n".join(lines)
+
+
+def routing_decision_hints(ctx: RoutingContext, *, score_threshold: float = 0.35) -> list[str]:
+    """Structured hints for orchestrator tools (LLM-readable, not prescriptive)."""
+    hints: list[str] = []
+    if ctx.fused_ranking and ctx.fused_ranking[0].final_score >= score_threshold:
+        top = ctx.fused_ranking[0]
+        hints.append(f"reuse_candidate: {top.agent_id} (score={top.final_score:.2f})")
+    elif ctx.fused_ranking:
+        hints.append("weak_expert_match: prefer orchestrator answer unless execution needed")
+    else:
+        hints.append("no_registered_expert: create_subagent only if execution-heavy and repeatable")
+    if ctx.suggested_skills:
+        hints.append(f"orchestrator_skills: {', '.join(ctx.suggested_skills[:5])}")
+    return hints

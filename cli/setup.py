@@ -56,7 +56,7 @@ sedimentation:
 expert_promotion:
   enabled: true
   min_repeat: 2
-  auto_create: true
+  auto_create: false
   score_threshold: 0.35
 
 assistants:

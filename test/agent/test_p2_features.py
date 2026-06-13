@@ -111,6 +111,28 @@ def test_expert_auto_promotion_on_repeat(evolux_home):
     assert prompt and "自动创建" in prompt
 
 
+def test_expert_promotion_suggests_without_auto_create(evolux_home):
+    registry = AgentRegistry(home=evolux_home)
+    index = SubAgentIndex(evolux_home, registry=registry)
+    settings = ExpertPromotionSettings(min_repeat=2, auto_create=False, score_threshold=0.9)
+    message = "help me refactor python asyncio code"
+    record_task_observation(evolux_home, assistant_id="default", user_message=message)
+    routing = fuse_routing([], [])
+    record_task_observation(evolux_home, assistant_id="default", user_message=message)
+    prompt, created = maybe_promote_expert(
+        evolux_home,
+        assistant_id="default",
+        user_message=message,
+        routing=routing,
+        agent_registry=registry,
+        subagent_index=index,
+        settings=settings,
+    )
+    assert created is None
+    assert prompt and "建议创建专家" in prompt
+    assert registry.list_by_assistant("default") == []
+
+
 def test_propose_and_approve_mcp(evolux_home):
     approved: dict[str, dict] = {}
 

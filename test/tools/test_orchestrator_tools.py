@@ -1,7 +1,7 @@
 import json
 
 from agent.agent_registry import AgentDefinition, AgentRegistry
-from agent.routing import fuse_routing
+from agent.routing import fuse_routing, SkillCandidate, SubAgentCandidate
 from agent.skill_router import SkillRouter
 from tools.orchestrator_tools import OrchestratorToolContext, handle_orchestrator_tool
 from vector.subagent_index import SubAgentIndex
@@ -91,3 +91,22 @@ def test_dispatch_subagent_blocks_internal_agent(evolux_home):
         )
     )
     assert "error" in out
+
+
+def test_search_subagents_includes_decision_hints(evolux_home):
+    registry = AgentRegistry(home=evolux_home)
+    ctx = OrchestratorToolContext(
+        assistant_id="default",
+        agent_registry=registry,
+        subagent_index=SubAgentIndex(evolux_home, registry=registry),
+        skill_router=SkillRouter(evolux_home),
+        prepare_routing=lambda q: fuse_routing(
+            [SkillCandidate("git", 0.9, description="Git")],
+            [SubAgentCandidate("code-expert", vector_score=0.8, skills=["git"])],
+        ),
+        create_subagent_runner=lambda **_: {},
+        dispatch_subagent=lambda **_: {"content": "ok"},
+    )
+    out = json.loads(handle_orchestrator_tool("search_subagents", {"query": "git commit"}, ctx))
+    assert "decision_hints" in out
+    assert any("reuse_candidate" in hint for hint in out["decision_hints"])

@@ -128,7 +128,12 @@ def maybe_promote_expert(
     has_expert = bool(routing.fused_ranking) and top_score >= settings.score_threshold
 
     if promoted and agent_registry.get(promoted):
-        return format_promotion_prompt(f"重复任务模式已绑定专家 `{promoted}`，优先 dispatch。"), None
+        return (
+            format_promotion_prompt(
+                f"相似任务曾绑定专家 `{promoted}`；若需执行可 dispatch，若仅解释请主控直接回答。"
+            ),
+            None,
+        )
 
     if has_expert:
         return None, None

@@ -8,6 +8,7 @@
 # Options:
 #   --skip-setup       Skip evolux setup wizard
 #   --skip-migrate     Skip Hermes auto-migration prompt
+#   --skip-git         Skip git fetch/pull (reinstall pip package only)
 #   --branch NAME      Git branch (default: main)
 #   --dir PATH         Install checkout directory
 #   --evolux-home PATH Data directory (default: ~/.evolux)
@@ -30,11 +31,13 @@ INSTALL_DIR="${EVOLUX_INSTALL_DIR:-$EVOLUX_HOME/evolux}"
 BRANCH="main"
 RUN_SETUP=true
 RUN_MIGRATE=true
+SKIP_GIT=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-setup) RUN_SETUP=false; shift ;;
         --skip-migrate) RUN_MIGRATE=false; shift ;;
+        --skip-git) SKIP_GIT=true; shift ;;
         --branch) BRANCH="$2"; shift 2 ;;
         --dir) INSTALL_DIR="$2"; shift 2 ;;
         --evolux-home) EVOLUX_HOME="$2"; shift 2 ;;
@@ -82,13 +85,29 @@ PY
 
 clone_or_update() {
     mkdir -p "$(dirname "$INSTALL_DIR")"
+    if [ "$SKIP_GIT" = true ]; then
+        if [ ! -d "$INSTALL_DIR/.git" ] && [ ! -f "$INSTALL_DIR/pyproject.toml" ]; then
+            echo "✗ --skip-git requires an existing checkout at $INSTALL_DIR"
+            exit 1
+        fi
+        log_warn "Skipping git update (--skip-git); using existing checkout"
+        return
+    fi
     if [ -d "$INSTALL_DIR/.git" ]; then
         log_info "Updating existing checkout: $INSTALL_DIR"
-        git -C "$INSTALL_DIR" fetch origin "$BRANCH"
+        log_info "Fetching from GitHub (may take a while; Ctrl+C then retry with --skip-git if stuck)..."
+        export GIT_TERMINAL_PROMPT=0
+        if ! git -C "$INSTALL_DIR" fetch --depth 1 origin "$BRANCH"; then
+            log_warn "git fetch failed (network/GitHub). Continuing with local checkout."
+            log_warn "Retry later: cd $INSTALL_DIR && git pull --ff-only origin $BRANCH"
+            return
+        fi
         git -C "$INSTALL_DIR" checkout "$BRANCH"
-        git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" || true
+        git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH" 2>/dev/null \
+            || git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" || true
     else
         log_info "Cloning Evolux into $INSTALL_DIR"
+        export GIT_TERMINAL_PROMPT=0
         git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
     fi
 }

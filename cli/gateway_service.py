@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 import platform
 import shutil
+import socket
 import subprocess
 import sys
-import sys
+import time
 from pathlib import Path
 
 from evolux_constants import EVOLUX_HOME_ENV, EVOLUX_PROFILE_ENV, get_evolux_home
@@ -29,17 +30,77 @@ def systemd_unit_name(profile: str = "") -> str:
 
 def resolve_evolux_argv(profile: str = "") -> list[str]:
     exe = shutil.which("evolux")
-    argv = [exe] if exe else [sys.executable, "-m", "cli.main"]
+    if exe:
+        argv = [str(Path(exe).resolve())]
+    else:
+        argv = [sys.executable, "-m", "cli.main"]
     if profile:
         argv.extend(["-p", profile])
     argv.extend(["gateway", "run", "--foreground"])
     return argv
 
 
+def _service_path_env() -> str:
+    local_bin = Path.home() / ".local/bin"
+    parts = [str(local_bin), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for part in parts:
+        if part not in seen:
+            seen.add(part)
+            ordered.append(part)
+    return ":".join(ordered)
+
+
+def service_unit_stale(profile: str = "") -> bool:
+    kind = platform_kind()
+    if kind == "launchd":
+        path = launchd_plist_path(profile)
+    elif kind == "systemd":
+        path = systemd_unit_path(profile)
+    else:
+        return False
+    if not path.exists():
+        return False
+    return "--foreground" not in path.read_text(encoding="utf-8")
+
+
+def _gateway_port_open(port: int, *, host: str = "127.0.0.1", timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _wait_for_gateway_port(port: int, *, timeout: float = 10.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _gateway_port_open(port):
+            return True
+        time.sleep(0.4)
+    return False
+
+
+def _print_log_tail(home: Path, *, lines: int = 15) -> None:
+    log_path = home / "logs" / "gateway.stderr.log"
+    if not log_path.exists():
+        print(f"No log file yet: {log_path}", file=sys.stderr)
+        return
+    tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+    if tail:
+        print(f"--- tail {log_path} ---", file=sys.stderr)
+        for line in tail:
+            print(line, file=sys.stderr)
+
+
 def generate_systemd_unit(*, home: Path, profile: str = "") -> str:
     argv = resolve_evolux_argv(profile)
     unit = systemd_unit_name(profile)
-    env_lines = [f"Environment={EVOLUX_HOME_ENV}={home}"]
+    env_lines = [
+        f"Environment={EVOLUX_HOME_ENV}={home}",
+        f"Environment=PATH={_service_path_env()}",
+    ]
     if profile:
         env_lines.append(f"Environment={EVOLUX_PROFILE_ENV}={profile}")
     env_block = "\n".join(env_lines)
@@ -71,6 +132,7 @@ def generate_launchd_plist(*, home: Path, profile: str = "") -> str:
     args_xml = "\n        ".join(f"<string>{part}</string>" for part in argv)
     env_entries = [
         f"<key>{EVOLUX_HOME_ENV}</key><string>{home}</string>",
+        f"<key>PATH</key><string>{_service_path_env()}</string>",
     ]
     if profile:
         env_entries.append(
@@ -145,8 +207,11 @@ def run_gateway_background(home: Path | None = None) -> int:
         return 1
 
     profile = _active_profile()
-    if not service_installed(profile):
-        code = install_gateway_service(home=base, force=False)
+    stale = service_unit_stale(profile)
+    if not service_installed(profile) or stale:
+        if stale:
+            print("Refreshing gateway service (old unit missing --foreground)...")
+        code = install_gateway_service(home=base, force=stale or not service_installed(profile))
         if code != 0:
             return code
 
@@ -157,10 +222,19 @@ def run_gateway_background(home: Path | None = None) -> int:
     from agent.runtime import bootstrap
 
     _, settings = bootstrap(base)
-    host = settings.gateway.host
-    port = settings.gateway.port
-    print(f"Evolux gateway running in background on http://{host}:{port}")
-    print(f"Dashboard: http://{host}:{port}/dashboard")
+    port = int(settings.gateway.port)
+    if not _wait_for_gateway_port(port):
+        print(
+            f"Gateway service loaded but http://127.0.0.1:{port} is not accepting connections.",
+            file=sys.stderr,
+        )
+        _print_log_tail(base)
+        print("Try: evolux gateway install --force && evolux gateway restart", file=sys.stderr)
+        print("Or debug: evolux gateway run --foreground", file=sys.stderr)
+        return 1
+
+    print(f"Evolux gateway running in background on http://127.0.0.1:{port}")
+    print(f"Dashboard: http://127.0.0.1:{port}/dashboard")
     print(f"Logs: {base / 'logs' / 'gateway.stderr.log'}")
     print("Stop: evolux gateway stop")
     print("Status: evolux gateway status")
@@ -353,6 +427,19 @@ def status_gateway_service() -> int:
             text=True,
         )
         print("State: loaded" if result.returncode == 0 else "State: not loaded")
+        try:
+            from agent.runtime import bootstrap
+
+            _, settings = bootstrap(base)
+            port = int(settings.gateway.port)
+            if _gateway_port_open(port):
+                print(f"HTTP: listening on http://127.0.0.1:{port}")
+            else:
+                print(f"HTTP: port {port} not accepting connections (service may have crashed)")
+                print("Fix: evolux gateway install --force && evolux gateway restart")
+                print(f"Logs: {base / 'logs' / 'gateway.stderr.log'}")
+        except Exception:
+            pass
         return 0
     print("Foreground only: evolux gateway run")
     return 0

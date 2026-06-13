@@ -9,6 +9,7 @@ from cli.gateway_service import (
     platform_kind,
     resolve_evolux_argv,
     service_label,
+    service_unit_stale,
     systemd_unit_name,
     systemd_unit_path,
     validate_gateway_ready,
@@ -18,8 +19,21 @@ from cli.setup import run_setup
 from gateway.assistant_registry import AssistantRegistry
 
 
-def test_resolve_evolux_argv_includes_run():
+def test_service_unit_stale_detects_missing_foreground(evolux_home, tmp_path, monkeypatch):
+    monkeypatch.setattr("cli.gateway_service.launchd_plist_path", lambda profile="": tmp_path / "a.plist")
+    path = tmp_path / "a.plist"
+    path.write_text("<string>gateway</string><string>run</string>", encoding="utf-8")
+    assert service_unit_stale() is True
+    path.write_text("<string>run</string><string>--foreground</string>", encoding="utf-8")
+    assert service_unit_stale() is False
+
+
+def test_resolve_evolux_argv_uses_absolute_path(monkeypatch, tmp_path):
+    fake = tmp_path / "evolux"
+    fake.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr("cli.gateway_service.shutil.which", lambda name: str(fake))
     argv = resolve_evolux_argv("")
+    assert argv[0] == str(fake.resolve())
     assert argv[-3:] == ["gateway", "run", "--foreground"]
 
 
@@ -28,6 +42,8 @@ def test_generate_systemd_unit_contains_home(evolux_home):
     assert "EVOLUX_HOME=" in unit
     assert "EVOLUX_PROFILE=work" in unit
     assert "gateway run" in unit
+    assert "--foreground" in unit
+    assert "PATH=" in unit
     assert systemd_unit_name("work") == "evolux-gateway-work.service"
 
 
@@ -36,6 +52,8 @@ def test_generate_launchd_plist(evolux_home):
     assert service_label() in plist
     assert "<string>gateway</string>" in plist
     assert "<string>run</string>" in plist
+    assert "<string>--foreground</string>" in plist
+    assert "<key>PATH</key>" in plist
     assert str(evolux_home) in plist
 
 

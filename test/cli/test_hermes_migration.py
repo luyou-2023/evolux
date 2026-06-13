@@ -67,6 +67,9 @@ def test_migrate_from_hermes_user_data(evolux_home, tmp_path):
     assert (evolux_home / "skills" / "demo" / "SKILL.md").exists()
     assert (evolux_home / "config.yaml").exists()
     assert "mcp_servers" in yaml.safe_load((evolux_home / "config.yaml").read_text(encoding="utf-8"))
+    cfg = yaml.safe_load((evolux_home / "config.yaml").read_text(encoding="utf-8"))
+    assert cfg["mcp_servers"]["echo"]["enabled"] is False
+    assert cfg["mcp"]["discover_on_startup"] is False
     assert not (evolux_home / ".env").exists()
     assert result.backup_dir is not None
     assert (result.backup_dir / "state.db").exists()

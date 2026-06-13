@@ -55,6 +55,7 @@ class MCPSamplingSettings:
 class MCPSettings:
     servers: dict[str, dict] = field(default_factory=dict)
     sampling: MCPSamplingSettings = field(default_factory=MCPSamplingSettings)
+    discover_on_startup: bool = False
 
 
 @dataclass
@@ -190,6 +191,8 @@ def load_settings(home: Path | None = None) -> Settings:
 
     mcp_root = raw.get("mcp", {})
     if isinstance(mcp_root, dict):
+        if "discover_on_startup" in mcp_root:
+            settings.mcp.discover_on_startup = bool(mcp_root["discover_on_startup"])
         sampling = mcp_root.get("sampling", {})
         if isinstance(sampling, dict):
             settings.mcp.sampling = MCPSamplingSettings(

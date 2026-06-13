@@ -38,6 +38,9 @@ gateway:
   feishu_webhook_port: 8765
   hermes_compat: true
 
+mcp:
+  discover_on_startup: false
+
 mcp_servers: {}
 
 sedimentation:

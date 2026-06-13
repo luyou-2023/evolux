@@ -320,8 +320,14 @@ def _merge_config(source: Path, target: Path, *, dry_run: bool) -> list[str]:
         if isinstance(dst_mcp, dict):
             for name, cfg in src_mcp.items():
                 if name not in dst_mcp:
-                    dst_mcp[name] = cfg
+                    entry = dict(cfg) if isinstance(cfg, dict) else {}
+                    entry["enabled"] = False
+                    dst_mcp[name] = entry
             merged_keys.append("mcp_servers")
+        mcp_root = dst_cfg.setdefault("mcp", {})
+        if isinstance(mcp_root, dict) and "discover_on_startup" not in mcp_root:
+            mcp_root["discover_on_startup"] = False
+            merged_keys.append("mcp.discover_on_startup")
 
     src_gateway = src_cfg.get("gateway")
     if isinstance(src_gateway, dict) and src_gateway:
@@ -448,6 +454,11 @@ def migrate_from_hermes(
 
     merged = _merge_config(src, dst, dry_run=dry_run)
     result.merged.extend(merged)
+    if "mcp_servers" in merged:
+        result.warnings.append(
+            "MCP servers imported with enabled: false — Hermes keeps subprocess MCP; "
+            "enable in Evolux config only if you want Evolux to spawn them locally."
+        )
 
     if _archive_hermes_state(src, backup_dir, dry_run=dry_run):
         result.copied.append("state.db (archived)")

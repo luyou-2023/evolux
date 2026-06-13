@@ -79,9 +79,10 @@ class EvoluxAgent:
         self.memory_manager = MemoryManager(home=self.home, assistant_id=assistant_id)
         self.goals_manager = GoalsManager(home=self.home, assistant_id=assistant_id)
         self.mcp_manager = MCPManager(home=self.home, settings=self.settings, llm_call=llm_call)
-        from mcp.registry_bridge import sync_mcp_tools
+        if self.settings.mcp.discover_on_startup:
+            from mcp.registry_bridge import sync_mcp_tools
 
-        sync_mcp_tools(self.mcp_manager)
+            sync_mcp_tools(self.mcp_manager)
         self.assistant_registry = AssistantRegistry(home=self.home)
         ensure_session_monitor_agent(self.agent_registry, assistant_id)
 

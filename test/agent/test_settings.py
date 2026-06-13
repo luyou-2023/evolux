@@ -9,6 +9,7 @@ def test_load_settings_defaults(evolux_home):
     assert settings.vector.backend == "sqlite-vec"
     assert settings.sedimentation.enabled is True
     assert settings.sedimentation.memory_after_turn is True
+    assert settings.mcp.discover_on_startup is False
 
 
 def test_load_settings_from_yaml(evolux_home):

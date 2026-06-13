@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from agent.agent_registry import AgentDefinition
+from agent.mcp_proposals import MCPProposal, MCPProposalStore
+from agent.planning_state import TurnPlanningState
+from agent.sedimentation import build_default_system_prompt, default_toolsets_for_domain
 from agent.session_monitor import is_internal_agent
 
 
@@ -19,6 +23,26 @@ class OrchestratorToolContext:
     prepare_routing: Callable[[str], Any]
     create_subagent_runner: Callable[..., Any]
     dispatch_subagent: Callable[..., Any]
+    turn_planning: TurnPlanningState | None = None
+    max_concurrent_subagents: int = 3
+    home: Path | None = None
+
+
+def _routing_defaults(
+    ctx: OrchestratorToolContext,
+    *,
+    skills: list[str],
+    domain: str,
+    toolsets: list[str],
+) -> tuple[list[str], list[str]]:
+    resolved_skills = list(skills)
+    resolved_toolsets = list(toolsets)
+    routing = ctx.turn_planning.routing if ctx.turn_planning else None
+    if not resolved_skills and routing:
+        resolved_skills = list(routing.suggested_skills[:5])
+    if not resolved_toolsets:
+        resolved_toolsets = default_toolsets_for_domain(domain)
+    return resolved_skills, resolved_toolsets
 
 
 def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: OrchestratorToolContext) -> str:
@@ -52,23 +76,67 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
         agent_id = str(arguments.get("agent_id") or "")
         if is_internal_agent(agent_id):
             return json.dumps({"error": f"agent id reserved: {agent_id}"}, ensure_ascii=False)
+        domain = str(arguments.get("domain") or "general")
+        name = str(arguments.get("name") or agent_id)
+        description = str(arguments.get("description") or "")
+        skills, toolsets = _routing_defaults(
+            ctx,
+            skills=list(arguments.get("skills") or []),
+            domain=domain,
+            toolsets=list(arguments.get("toolsets") or []),
+        )
+        mcp_servers = list(arguments.get("mcp_servers") or [])
+        system_prompt = str(
+            arguments.get("system_prompt_template")
+            or arguments.get("system_prompt")
+            or ""
+        ).strip()
+        if not system_prompt:
+            system_prompt = build_default_system_prompt(
+                name=name,
+                domain=domain,
+                description=description,
+                skills=skills,
+                toolsets=toolsets,
+                mcp_servers=mcp_servers,
+            )
         agent = AgentDefinition(
-            agent_id=arguments["agent_id"],
+            agent_id=agent_id,
             assistant_id=ctx.assistant_id,
-            name=arguments.get("name", arguments["agent_id"]),
-            domain=arguments.get("domain", "general"),
-            description=arguments.get("description", ""),
-            skills=list(arguments.get("skills", [])),
-            toolsets=list(arguments.get("toolsets", [])),
+            name=name,
+            domain=domain,
+            description=description,
+            system_prompt_template=system_prompt,
+            skills=skills,
+            toolsets=toolsets,
+            mcp_servers=mcp_servers,
         )
         ctx.agent_registry.register(agent)
         ctx.subagent_index.sync_agent(agent)
-        return json.dumps({"created": agent.agent_id}, ensure_ascii=False)
+        return json.dumps(
+            {
+                "created": agent.agent_id,
+                "skills": skills,
+                "toolsets": toolsets,
+                "mcp_servers": mcp_servers,
+            },
+            ensure_ascii=False,
+        )
 
     if name == "dispatch_subagent":
         agent_id = str(arguments.get("agent_id") or "")
         if is_internal_agent(agent_id):
             return json.dumps({"error": f"agent reserved for system use: {agent_id}"}, ensure_ascii=False)
+        if ctx.turn_planning and ctx.turn_planning.dispatch_count >= ctx.max_concurrent_subagents:
+            return json.dumps(
+                {
+                    "error": (
+                        f"max concurrent subagents reached ({ctx.max_concurrent_subagents}); "
+                        "wait for current dispatches or summarize partial results"
+                    )
+                },
+                ensure_ascii=False,
+            )
         result = ctx.dispatch_subagent(
             agent_id=arguments["agent_id"],
             task=arguments.get("task", ""),
@@ -76,6 +144,65 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
             context_slice=arguments.get("context_slice", ""),
         )
         return json.dumps(result, ensure_ascii=False)
+
+    if name == "plan_task":
+        goal = str(arguments.get("goal") or "").strip()
+        steps = arguments.get("steps") or []
+        if not goal:
+            return json.dumps({"error": "goal is required"}, ensure_ascii=False)
+        if not isinstance(steps, list) or not steps:
+            return json.dumps({"error": "steps array is required"}, ensure_ascii=False)
+        if ctx.turn_planning is not None:
+            ctx.turn_planning.plan_goal = goal
+            ctx.turn_planning.plan_steps = [dict(step) for step in steps if isinstance(step, dict)]
+            if ctx.home and ctx.turn_planning.session_key:
+                from agent.session_plan import save_session_plan
+
+                save_session_plan(
+                    ctx.home,
+                    ctx.turn_planning.session_key,
+                    goal=goal,
+                    steps=ctx.turn_planning.plan_steps,
+                )
+        return json.dumps(
+            {
+                "planned": True,
+                "goal": goal,
+                "steps": len(steps),
+                "hint": "Execute steps via dispatch_subagent; update plan if scope changes.",
+            },
+            ensure_ascii=False,
+        )
+
+    if name == "propose_mcp_server":
+        name_value = str(arguments.get("name") or "").strip()
+        transport = str(arguments.get("transport") or "stdio").strip().lower()
+        if not name_value:
+            return json.dumps({"error": "name is required"}, ensure_ascii=False)
+        if transport not in {"stdio", "http"}:
+            return json.dumps({"error": "transport must be stdio or http"}, ensure_ascii=False)
+        proposal = MCPProposal(
+            name=name_value,
+            transport=transport,
+            reason=str(arguments.get("reason") or ""),
+            command=arguments.get("command"),
+            args=list(arguments.get("args") or []),
+            url=arguments.get("url"),
+        )
+        if transport == "http" and not proposal.url:
+            return json.dumps({"error": "url is required for http transport"}, ensure_ascii=False)
+        if transport == "stdio" and not proposal.command:
+            return json.dumps({"error": "command is required for stdio transport"}, ensure_ascii=False)
+        store = MCPProposalStore(home=ctx.home)
+        store.add_proposal(proposal)
+        return json.dumps(
+            {
+                "proposed": name_value,
+                "status": "pending",
+                "approve_hint": f"User can run /mcp approve {name_value} to enable.",
+            },
+            ensure_ascii=False,
+        )
 
     if name == "retire_subagent":
         agent_id = arguments.get("agent_id", "")
@@ -133,7 +260,10 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "create_subagent": {
         "name": "create_subagent",
-        "description": "Register a new domain subagent.",
+        "description": (
+            "Register a new domain expert subagent with skills, toolsets, MCP, and system prompt. "
+            "Omit skills/toolsets to inherit from current routing suggestions."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -141,8 +271,10 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "name": {"type": "string"},
                 "domain": {"type": "string"},
                 "description": {"type": "string"},
+                "system_prompt_template": {"type": "string"},
                 "skills": {"type": "array", "items": {"type": "string"}},
                 "toolsets": {"type": "array", "items": {"type": "string"}},
+                "mcp_servers": {"type": "array", "items": {"type": "string"}},
             },
             "required": ["agent_id"],
         },
@@ -159,6 +291,49 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "context_slice": {"type": "string"},
             },
             "required": ["agent_id", "task"],
+        },
+    },
+    "plan_task": {
+        "name": "plan_task",
+        "description": (
+            "Create a structured multi-step plan before delegating work to subagents."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string"},
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "action": {"type": "string"},
+                            "agent_id": {"type": "string"},
+                            "skills": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["action"],
+                    },
+                },
+            },
+            "required": ["goal", "steps"],
+        },
+    },
+    "propose_mcp_server": {
+        "name": "propose_mcp_server",
+        "description": (
+            "Propose a new MCP server for user approval (/mcp approve). Does not enable until approved."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "transport": {"type": "string", "enum": ["stdio", "http"]},
+                "command": {"type": "string"},
+                "args": {"type": "array", "items": {"type": "string"}},
+                "url": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["name", "transport"],
         },
     },
     "retire_subagent": {

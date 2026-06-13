@@ -20,10 +20,14 @@ SLASH_ROOT_COMMANDS: tuple[str, ...] = (
     "tools",
     "retry",
     "undo",
+    "goal",
+    "mcp",
 )
 
 SLASH_SUBCOMMANDS: dict[str, tuple[str, ...]] = {
     "skills": ("browse", "list"),
+    "goal": ("add", "done", "clear", "list"),
+    "mcp": ("list", "approve", "reject"),
 }
 
 CHAT_LOCAL_COMMANDS: tuple[str, ...] = ("exit", "quit")

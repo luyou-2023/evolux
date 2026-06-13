@@ -34,6 +34,9 @@
 | Session Monitor 扩展命令（/compress /sessions /model /tools） | ✅ 完成 |
 | Session Monitor /title /skills + 飞书 /commands 卡片 | ✅ 完成 |
 | /resume + Dashboard 标题 + CLI slash Tab 补全 | ✅ 完成 |
+| 自主规划 + 专家/方案沉淀（orchestrator prompt、create 增强、MEMORY/SOLUTIONS） | ✅ 完成 |
+| P1 FTS5 + 压缩链 + 回合后 MEMORY 沉淀 | ✅ 完成 |
+| P2 /goal + plan_task + 专家自动晋升 + MCP 提案 | ✅ 完成 |
 | Phase 6 Feishu 工具 / ACP 进度流 | ✅ 完成 |
 | Phase 7 SQLite 向量 / LLM 流式 / CI | ✅ 完成 |
 | Phase 8 LLM tools 接线 / Sub-agent MCP 子集 | ✅ 完成 |

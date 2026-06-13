@@ -111,9 +111,14 @@ def test_slash_compress_reduces_messages(evolux_home):
     )
     assert outcome and outcome.handled
     assert "压缩" in (outcome.reply or "")
-    assert db.count_messages(session_id) < 24
-    messages = db.get_messages(session_id)
+    assert "压缩链" in (outcome.reply or "")
+    new_session_id = db.get_session_id_by_key(key)
+    assert new_session_id is not None
+    assert new_session_id != session_id
+    assert db.count_messages(new_session_id) < 24
+    messages = db.get_messages(new_session_id)
     assert any("auth flow" in str(item["content"]) for item in messages)
+    assert db.get_compression_log_for_child(new_session_id) is not None
 
 
 def test_slash_sessions_lists_current(evolux_home):

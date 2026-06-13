@@ -37,6 +37,17 @@ gateway:
 
 mcp_servers: {}
 
+sedimentation:
+  enabled: true
+  memory_after_turn: true
+  llm_extract: false
+
+expert_promotion:
+  enabled: true
+  min_repeat: 2
+  auto_create: true
+  score_threshold: 0.35
+
 assistants:
   default:
     name: 默认助手

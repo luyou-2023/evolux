@@ -11,8 +11,15 @@ from agent.context_compressor import CompressionConfig, compress_messages
 from agent.conversation_loop import ConversationResult
 from agent.slash_commands import SlashCommandContext, try_handle_slash_command
 from agent.memory_manager import MemoryManager
+from agent.expert_promotion import maybe_promote_expert, record_task_observation
+from agent.goals_manager import GoalsManager
+from agent.memory_sedimentation import extract_memory_entries_llm, sediment_global_memory
 from agent.orchestrator import OrchestratorAgent
+from agent.orchestrator_prompt import build_orchestrator_system_prompt
+from agent.planning_state import TurnPlanningState
+from agent.session_plan import load_session_plan, save_session_plan
 from agent.routing import FusionWeights, RoutingContext, SubAgentCandidate, fuse_routing
+from agent.sedimentation import sediment_agent_task, sediment_turn_solution
 from agent.settings import Settings, load_settings
 from agent.session_monitor import (
     SESSION_MONITOR_AGENT_ID,
@@ -70,6 +77,7 @@ class EvoluxAgent:
             backend=vector_backend,
         )
         self.memory_manager = MemoryManager(home=self.home, assistant_id=assistant_id)
+        self.goals_manager = GoalsManager(home=self.home, assistant_id=assistant_id)
         self.mcp_manager = MCPManager(home=self.home, settings=self.settings, llm_call=llm_call)
         from mcp.registry_bridge import sync_mcp_tools
 
@@ -77,6 +85,7 @@ class EvoluxAgent:
         self.assistant_registry = AssistantRegistry(home=self.home)
         ensure_session_monitor_agent(self.agent_registry, assistant_id)
 
+        self._turn_planning = TurnPlanningState()
         self._tool_context = OrchestratorToolContext(
             assistant_id=assistant_id,
             agent_registry=self.agent_registry,
@@ -85,6 +94,9 @@ class EvoluxAgent:
             prepare_routing=self.prepare_routing,
             create_subagent_runner=self.create_subagent,
             dispatch_subagent=self.dispatch_subagent,
+            turn_planning=self._turn_planning,
+            max_concurrent_subagents=self.settings.orchestrator_max_concurrent_subagents,
+            home=self.home,
         )
         combined_tool_executor = tool_executor or build_combined_tool_executor(
             self._tool_context,
@@ -100,6 +112,13 @@ class EvoluxAgent:
         self._progress_callback = None
         self._session_key = ""
         self._platform = "cli"
+
+    def _approve_mcp_server(self, name: str, config: dict[str, Any]) -> None:
+        self.settings.mcp.servers[name] = dict(config)
+        self.mcp_manager.register_server(name, config)
+        from mcp.registry_bridge import sync_mcp_tools
+
+        sync_mcp_tools(self.mcp_manager, name)
 
     def prepare_routing(self, user_message: str) -> RoutingContext:
         skill_candidates = self.skill_router.identify(
@@ -141,12 +160,33 @@ class EvoluxAgent:
         routing: RoutingContext,
         *,
         include_memory: bool = True,
+        session_key: str = "",
     ) -> list[dict[str, Any]]:
         prefix: list[dict[str, Any]] = []
+        prefix.append(
+            {
+                "role": "system",
+                "content": build_orchestrator_system_prompt(
+                    max_concurrent_subagents=self.settings.orchestrator_max_concurrent_subagents,
+                ),
+            }
+        )
         if include_memory:
             snapshot = self.memory_manager.read_snapshot()
+            solutions = self.memory_manager.read_solutions_snapshot()
+            goals = self.goals_manager.read_snapshot()
+            plan = load_session_plan(self.home, session_key) if session_key else ""
+            memory_parts = []
             if snapshot:
-                prefix.append({"role": "system", "content": snapshot})
+                memory_parts.append(snapshot)
+            if goals:
+                memory_parts.append(goals)
+            if solutions:
+                memory_parts.append(f"<!-- SOLUTIONS -->\n{solutions}")
+            if plan:
+                memory_parts.append(plan)
+            if memory_parts:
+                prefix.append({"role": "system", "content": "\n\n".join(memory_parts)})
         if routing.prompt_block:
             prefix.append({"role": "system", "content": routing.prompt_block})
         return prefix
@@ -210,6 +250,8 @@ class EvoluxAgent:
                 on_progress=self._progress_callback,
                 settings=self.settings,
                 home=self.home,
+                goals_manager=self.goals_manager,
+                on_mcp_approved=self._approve_mcp_server,
             ),
         )
         if slash and slash.handled:
@@ -232,7 +274,10 @@ class EvoluxAgent:
                 )
             user_message = slash.rerun_message
 
-        history = [{"role": m["role"], "content": m["content"]} for m in self.session_db.get_messages(session_id)]
+        history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in self.session_db.load_history(session_key)
+        ]
 
         if compress:
             compressed = compress_messages(
@@ -242,7 +287,30 @@ class EvoluxAgent:
             history = compressed.messages
 
         routing = self.prepare_routing(user_message)
-        prefix = self._build_prefix_messages(routing)
+        record_task_observation(
+            self.home,
+            assistant_id=self.assistant_id,
+            user_message=user_message,
+        )
+        promotion_prompt, _created = maybe_promote_expert(
+            self.home,
+            assistant_id=self.assistant_id,
+            user_message=user_message,
+            routing=routing,
+            agent_registry=self.agent_registry,
+            subagent_index=self.subagent_index,
+            settings=self.settings.expert_promotion,
+        )
+        if promotion_prompt:
+            routing.prompt_block = f"{routing.prompt_block}\n\n{promotion_prompt}".strip()
+        if _created:
+            routing = self.prepare_routing(user_message)
+            if promotion_prompt:
+                routing.prompt_block = f"{routing.prompt_block}\n\n{promotion_prompt}".strip()
+
+        self._turn_planning.reset(user_message=user_message, session_key=session_key)
+        self._turn_planning.routing = routing
+        prefix = self._build_prefix_messages(routing, session_key=session_key)
         turn_messages = history + [{"role": "user", "content": user_message}]
         tools = get_agent_tool_definitions(platform=platform)
         if self.settings.routing.trim_tools:
@@ -310,6 +378,43 @@ class EvoluxAgent:
         if result.content:
             self.session_db.append_message(session_id, "user", user_message)
             self.session_db.append_message(session_id, "assistant", result.content)
+        if (
+            self.settings.sedimentation.enabled
+            and result.content
+            and self._turn_planning.dispatches
+        ):
+            sediment_turn_solution(
+                self.memory_manager,
+                user_message=user_message,
+                final_reply=result.content,
+                dispatches=self._turn_planning.dispatches,
+            )
+        if (
+            self.settings.sedimentation.enabled
+            and self.settings.sedimentation.memory_after_turn
+            and result.content
+        ):
+            extract_fn = None
+            if self.settings.sedimentation.llm_extract:
+                extract_fn = lambda u, r, d: extract_memory_entries_llm(
+                    self.orchestrator.llm_call, u, r, d
+                )
+            sediment_global_memory(
+                self.memory_manager,
+                user_message=user_message,
+                final_reply=result.content,
+                dispatches=self._turn_planning.dispatches,
+                extract_fn=extract_fn,
+            )
+        for dispatch in self._turn_planning.dispatches:
+            record_task_observation(
+                self.home,
+                assistant_id=self.assistant_id,
+                user_message=user_message,
+                increment=False,
+                agent_id=dispatch["agent_id"],
+                skills=list(dispatch.get("skills") or []),
+            )
         return result
 
     def dispatch_subagent(
@@ -325,9 +430,21 @@ class EvoluxAgent:
             return {"error": f"unknown agent: {agent_id}"}
         if is_internal_agent(agent_id):
             return {"error": f"agent reserved for system use: {agent_id}"}
+        if self._turn_planning.dispatch_count >= self.settings.orchestrator_max_concurrent_subagents:
+            return {
+                "error": (
+                    f"max concurrent subagents reached "
+                    f"({self.settings.orchestrator_max_concurrent_subagents})"
+                )
+            }
 
         skill_names = skills or agent_def.skills
         skill_instructions = self.skill_router.load_for_execution(skill_names)
+        system_prompt = agent_def.system_prompt_template
+        agent_memory = self.memory_manager.read_agent_memory(agent_id)
+        if agent_memory:
+            memory_block = f"## 领域记忆（历史任务沉淀）\n{agent_memory}"
+            system_prompt = f"{system_prompt}\n\n{memory_block}".strip() if system_prompt else memory_block
         subagent_tools = get_subagent_tool_definitions(
             toolsets=agent_def.toolsets or ["evolux-code"],
             mcp_servers=list(agent_def.mcp_servers or []),
@@ -341,7 +458,7 @@ class EvoluxAgent:
             agent_id=agent_id,
             llm_call=self.orchestrator.llm_call,
             max_iterations=self.settings.subagent_max_iterations,
-            system_prompt=agent_def.system_prompt_template,
+            system_prompt=system_prompt,
             skill_instructions=skill_instructions,
             tool_executor=build_combined_tool_executor(
                 self._tool_context,
@@ -367,6 +484,21 @@ class EvoluxAgent:
         result = subagent.run_task(task, context_slice=context_slice, tool_hook=subagent_hook)
         _touch_agent_usage(self.agent_registry, agent_def)
         self.subagent_index.sync_agent(self.agent_registry.get(agent_id))
+        if self.settings.sedimentation.enabled and result.content:
+            sediment_agent_task(
+                self.memory_manager,
+                agent_id=agent_id,
+                task=task,
+                summary=str(result.content),
+                skills=skill_names,
+            )
+        self._turn_planning.record_dispatch(
+            agent_id=agent_id,
+            task=task,
+            skills=skill_names,
+            summary=str(result.content or ""),
+            exhausted=result.exhausted,
+        )
         payload = {
             "agent_id": agent_id,
             "content": result.content,

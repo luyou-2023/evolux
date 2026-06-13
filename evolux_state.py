@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import uuid
 from pathlib import Path
@@ -9,7 +10,24 @@ from typing import Any
 
 from evolux_constants import get_evolux_home
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+_FTS_TRIGGERS = """
+CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, content, session_id, role)
+    VALUES (new.id, new.content, new.session_id, new.role);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+    VALUES ('delete', old.id, old.content, old.session_id, old.role);
+END;
+CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+    INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+    VALUES ('delete', old.id, old.content, old.session_id, old.role);
+    INSERT INTO messages_fts(rowid, content, session_id, role)
+    VALUES (new.id, new.content, new.session_id, new.role);
+END;
+"""
 
 
 class SessionDB:
@@ -60,6 +78,25 @@ class SessionDB:
         }
         if "title" not in columns:
             self._conn.execute("ALTER TABLE sessions ADD COLUMN title TEXT DEFAULT ''")
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS compression_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_session_id TEXT NOT NULL,
+                child_session_id TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                messages_before INTEGER NOT NULL DEFAULT 0,
+                messages_after INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_compression_child ON compression_log(child_session_id)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_compression_parent ON compression_log(parent_session_id)"
+        )
         current = self._conn.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()
@@ -67,6 +104,37 @@ class SessionDB:
             self._conn.execute(
                 "UPDATE meta SET value = ? WHERE key = 'schema_version'",
                 (str(SCHEMA_VERSION),),
+            )
+        version = int(
+            self._conn.execute(
+                "SELECT value FROM meta WHERE key = 'schema_version'"
+            ).fetchone()["value"]
+        )
+        if version >= 3:
+            self._ensure_fts()
+
+    def _ensure_fts(self) -> None:
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'"
+        ).fetchone()
+        if row is None:
+            self._conn.executescript(
+                """
+                CREATE VIRTUAL TABLE messages_fts USING fts5(
+                    content,
+                    session_id UNINDEXED,
+                    role UNINDEXED,
+                    content='messages',
+                    content_rowid='id'
+                );
+                """
+                + _FTS_TRIGGERS
+            )
+            self._conn.execute(
+                """
+                INSERT INTO messages_fts(rowid, content, session_id, role)
+                SELECT id, content, session_id, role FROM messages
+                """
             )
 
     def create_session(
@@ -211,10 +279,11 @@ class SessionDB:
             SELECT session_id, session_key, assistant_id, platform, title, created_at,
                    (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.session_id) AS message_count
             FROM sessions s
+            WHERE session_key NOT LIKE '%::archived::%'
         """
         params: list[Any] = []
         if assistant_id:
-            query += " WHERE assistant_id = ?"
+            query += " AND assistant_id = ?"
             params.append(assistant_id)
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
@@ -265,6 +334,140 @@ class SessionDB:
         sql += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         rows = self._conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_session_row_by_id(self, session_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            "SELECT session_id, session_key, assistant_id, platform, title, parent_session_id, created_at "
+            "FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def rotate_session_tip(
+        self,
+        *,
+        session_key: str,
+        assistant_id: str,
+        platform: str,
+        parent_session_id: str,
+        title: str = "",
+    ) -> str:
+        archive_key = f"{session_key}::archived::{parent_session_id[:8]}"
+        self._conn.execute(
+            "UPDATE sessions SET session_key = ? WHERE session_id = ?",
+            (archive_key, parent_session_id),
+        )
+        child_id = self.create_session(
+            session_key,
+            assistant_id,
+            platform,
+            parent_session_id=parent_session_id,
+        )
+        if title:
+            self._conn.execute(
+                "UPDATE sessions SET title = ? WHERE session_id = ?",
+                (title.strip(), child_id),
+            )
+            self._conn.commit()
+        return child_id
+
+    def log_compression(
+        self,
+        *,
+        parent_session_id: str,
+        child_session_id: str,
+        summary: str,
+        messages_before: int,
+        messages_after: int,
+    ) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO compression_log(
+                parent_session_id, child_session_id, summary, messages_before, messages_after
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (parent_session_id, child_session_id, summary, messages_before, messages_after),
+        )
+        self._conn.commit()
+
+    def get_compression_log_for_child(self, child_session_id: str) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT parent_session_id, child_session_id, summary, messages_before, messages_after, created_at
+            FROM compression_log
+            WHERE child_session_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (child_session_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def load_history(self, session_key: str) -> list[dict[str, Any]]:
+        session_id = self.get_session_id_by_key(session_key)
+        if not session_id:
+            return []
+        prefix: list[dict[str, Any]] = []
+        child_id = session_id
+        while True:
+            log = self.get_compression_log_for_child(child_id)
+            if not log:
+                break
+            parent_id = str(log["parent_session_id"])
+            if child_id != session_id:
+                summary = str(log.get("summary") or "").strip()
+                if summary:
+                    prefix.insert(
+                        0,
+                        {
+                            "role": "system",
+                            "content": f"## 历史摘要（压缩链）\n{summary}",
+                        },
+                    )
+            child_id = parent_id
+        return prefix + self.get_messages(session_id)
+
+    @staticmethod
+    def _build_fts_query(query: str) -> str:
+        tokens = re.findall(r"[\w\u4e00-\u9fff]+", query.strip())
+        if not tokens:
+            return ""
+        return " OR ".join(f'"{token}"' for token in tokens[:12])
+
+    def search_messages_fts(
+        self,
+        query: str,
+        *,
+        assistant_id: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        fts_query = self._build_fts_query(query)
+        if not fts_query:
+            return []
+        if not self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'"
+        ).fetchone():
+            return []
+        sql = """
+            SELECT s.session_id, s.session_key, s.assistant_id, s.platform, s.title,
+                   m.role, m.content, m.created_at
+            FROM messages_fts f
+            JOIN messages m ON m.id = f.rowid
+            JOIN sessions s ON s.session_id = m.session_id
+            WHERE messages_fts MATCH ?
+              AND s.session_key NOT LIKE '%::archived::%'
+        """
+        params: list[Any] = [fts_query]
+        if assistant_id:
+            sql += " AND s.assistant_id = ?"
+            params.append(assistant_id)
+        sql += " ORDER BY rank LIMIT ?"
+        params.append(limit)
+        try:
+            rows = self._conn.execute(sql, params).fetchall()
+        except sqlite3.OperationalError:
+            return []
         return [dict(row) for row in rows]
 
     def close(self) -> None:

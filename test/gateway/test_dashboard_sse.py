@@ -50,7 +50,7 @@ async def test_dashboard_sse_streams_events(evolux_home):
     async with TestClient(TestServer(app)) as http:
         resp = await http.get("/dashboard/events?once=1")
         assert resp.status == 200
-        chunk = await resp.content.read(4096)
+        chunk = await resp.content.read()
         text = chunk.decode("utf-8")
         assert "sse_probe" in text
         probe_line = next(line for line in text.splitlines() if "sse_probe" in line)

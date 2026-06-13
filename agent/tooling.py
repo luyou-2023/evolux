@@ -18,6 +18,8 @@ ORCHESTRATOR_TOOL_NAMES = frozenset(
         "create_subagent",
         "dispatch_subagent",
         "retire_subagent",
+        "plan_task",
+        "propose_mcp_server",
     }
 )
 

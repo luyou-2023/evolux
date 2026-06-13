@@ -72,8 +72,24 @@ class MonitorSettings:
 
 
 @dataclass
+class SedimentationSettings:
+    enabled: bool = True
+    memory_after_turn: bool = True
+    llm_extract: bool = False
+
+
+@dataclass
+class ExpertPromotionSettings:
+    enabled: bool = True
+    min_repeat: int = 2
+    auto_create: bool = True
+    score_threshold: float = 0.35
+
+
+@dataclass
 class Settings:
     orchestrator_max_iterations: int = 30
+    orchestrator_max_concurrent_subagents: int = 3
     subagent_max_iterations: int = 90
     routing: RoutingSettings = field(default_factory=RoutingSettings)
     compression: CompressionSettings = field(default_factory=CompressionSettings)
@@ -83,6 +99,8 @@ class Settings:
     vector: VectorSettings = field(default_factory=VectorSettings)
     cron: CronSettings = field(default_factory=CronSettings)
     monitor: MonitorSettings = field(default_factory=MonitorSettings)
+    sedimentation: SedimentationSettings = field(default_factory=SedimentationSettings)
+    expert_promotion: ExpertPromotionSettings = field(default_factory=ExpertPromotionSettings)
 
 
 def load_settings(home: Path | None = None) -> Settings:
@@ -97,6 +115,8 @@ def load_settings(home: Path | None = None) -> Settings:
     orch = raw.get("orchestrator", {})
     if "max_iterations" in orch:
         settings.orchestrator_max_iterations = int(orch["max_iterations"])
+    if "max_concurrent_subagents" in orch:
+        settings.orchestrator_max_concurrent_subagents = int(orch["max_concurrent_subagents"])
 
     sub = raw.get("subagent", {})
     if "max_iterations" in sub:
@@ -178,6 +198,27 @@ def load_settings(home: Path | None = None) -> Settings:
         settings.monitor = MonitorSettings(
             enabled=bool(monitor.get("enabled", settings.monitor.enabled)),
             push_interim=bool(monitor.get("push_interim", settings.monitor.push_interim)),
+        )
+
+    sedimentation = raw.get("sedimentation", {})
+    if isinstance(sedimentation, dict):
+        settings.sedimentation = SedimentationSettings(
+            enabled=bool(sedimentation.get("enabled", settings.sedimentation.enabled)),
+            memory_after_turn=bool(
+                sedimentation.get("memory_after_turn", settings.sedimentation.memory_after_turn)
+            ),
+            llm_extract=bool(sedimentation.get("llm_extract", settings.sedimentation.llm_extract)),
+        )
+
+    promotion = raw.get("expert_promotion", {})
+    if isinstance(promotion, dict):
+        settings.expert_promotion = ExpertPromotionSettings(
+            enabled=bool(promotion.get("enabled", settings.expert_promotion.enabled)),
+            min_repeat=int(promotion.get("min_repeat", settings.expert_promotion.min_repeat)),
+            auto_create=bool(promotion.get("auto_create", settings.expert_promotion.auto_create)),
+            score_threshold=float(
+                promotion.get("score_threshold", settings.expert_promotion.score_threshold)
+            ),
         )
 
     return settings

@@ -19,6 +19,8 @@ _EVOLUX_CORE_TOOLS = [
     "create_subagent",
     "dispatch_subagent",
     "retire_subagent",
+    "plan_task",
+    "propose_mcp_server",
     "clarify",
 ]
 
@@ -67,6 +69,8 @@ TOOLSETS: dict[str, dict[str, Any]] = {
             "create_subagent",
             "dispatch_subagent",
             "retire_subagent",
+            "plan_task",
+            "propose_mcp_server",
             "clarify",
             "skills_list",
             "skill_view",
@@ -109,6 +113,8 @@ TOOLSETS: dict[str, dict[str, Any]] = {
             "create_subagent",
             "dispatch_subagent",
             "retire_subagent",
+            "plan_task",
+            "propose_mcp_server",
             "clarify",
         ],
         "includes": [],

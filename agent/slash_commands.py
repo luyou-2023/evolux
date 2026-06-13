@@ -7,6 +7,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from agent.context_compressor import CompressionConfig, compress_messages
+from agent.goals_manager import GoalsManager
+from agent.mcp_proposals import (
+    MCPProposalStore,
+    persist_mcp_server_to_config,
+    proposal_to_server_config,
+)
+from agent.session_compression import persist_session_compression
+from agent.session_plan import clear_session_plan
 from agent.settings import Settings
 from agent.turn_cancel import clear_turn_cancel, request_turn_cancel
 from evolux_state import SessionDB
@@ -28,6 +36,8 @@ class SlashCommandContext:
     on_progress: Callable[[str], None] | None = None
     settings: Settings | None = None
     home: Path | None = None
+    on_mcp_approved: Callable[[str, dict[str, Any]], None] | None = None
+    goals_manager: Any | None = None
 
 
 @dataclass
@@ -107,6 +117,8 @@ def _cmd_help(_ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
         "/compress [focus] — 手动压缩会话上下文",
         "/model — 显示当前 LLM 模型",
         "/tools — 列出当前可用工具",
+        "/goal [add|done|clear] — 跨会话目标管理",
+        "/mcp [list|approve|reject] — MCP 提案审批",
         "/retry — 重试上一条用户消息",
         "/undo — 撤销上一轮对话",
     ]
@@ -115,6 +127,8 @@ def _cmd_help(_ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
 
 def _cmd_new(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
     ctx.session_db.reset_session(ctx.session_key, ctx.assistant_id, ctx.platform)
+    if ctx.home:
+        clear_session_plan(ctx.home, ctx.session_key)
     clear_turn_cancel(ctx.session_key)
     message = f"{MONITOR_PREFIX} · 已开始新会话，历史记录已清空。"
     _notify(ctx, message)
@@ -216,13 +230,21 @@ def _cmd_compress(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
             reply=f"{MONITOR_PREFIX} · 消息量未超过保留阈值（{cfg.keep_recent_turns} 轮），无需压缩。",
         )
 
-    ctx.session_db.replace_messages(session_id, result.messages)
+    child_id = persist_session_compression(
+        ctx.session_db,
+        session_key=ctx.session_key,
+        result=result,
+    )
+    if child_id is None:
+        ctx.session_db.replace_messages(session_id, result.messages)
     before = len(raw_messages)
     after = len(result.messages)
     message = (
         f"{MONITOR_PREFIX} · 已压缩会话上下文：{before} 条 → {after} 条，"
         f"保留最近 {cfg.keep_recent_turns} 轮。"
     )
+    if child_id is not None:
+        message += " 已写入压缩链（parent_session_id）。"
     if focus:
         message += f" 焦点：{focus}"
     _notify(ctx, message)
@@ -423,6 +445,100 @@ def _cmd_undo(ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
     return SlashCommandOutcome(handled=True, reply=message)
 
 
+def _goals(ctx: SlashCommandContext) -> GoalsManager:
+    if ctx.goals_manager is not None:
+        return ctx.goals_manager
+    return GoalsManager(home=ctx.home, assistant_id=ctx.assistant_id)
+
+
+def _cmd_goal(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    manager = _goals(ctx)
+    parts = args.split(None, 1)
+    action = parts[0].lower() if parts else "list"
+    rest = parts[1].strip() if len(parts) > 1 else ""
+
+    if action in {"list", ""}:
+        goals = manager.list_goals()
+        active = [goal for goal in goals if not goal.done]
+        if not active:
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 尚无活跃目标。")
+        lines = [f"{MONITOR_PREFIX} · 活跃目标 ({len(active)}):"]
+        for goal in active:
+            lines.append(f"• [{goal.goal_id}] {goal.text}")
+        lines.append("使用 /goal done <id> 标记完成。")
+        return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+    if action == "add":
+        if not rest:
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 用法: /goal add <描述>")
+        goal = manager.add_goal(rest)
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 已添加目标 [{goal.goal_id}] {goal.text}",
+        )
+
+    if action == "done":
+        if not rest:
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 用法: /goal done <id>")
+        if manager.mark_done(rest):
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 目标 `{rest}` 已完成。")
+        return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 未找到目标 `{rest}`。")
+
+    if action == "clear":
+        removed = manager.clear_done()
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 已清除 {removed} 个已完成目标。",
+        )
+
+    return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 用法: /goal [list|add|done|clear]")
+
+
+def _cmd_mcp(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    store = MCPProposalStore(home=ctx.home)
+    parts = args.split()
+    action = parts[0].lower() if parts else "list"
+    name = parts[1] if len(parts) > 1 else ""
+
+    if action in {"list", ""}:
+        pending = store.list_proposals(status="pending")
+        if not pending:
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 无待审批 MCP 提案。")
+        lines = [f"{MONITOR_PREFIX} · 待审批 MCP ({len(pending)}):"]
+        for item in pending:
+            lines.append(f"• {item.name} ({item.transport}) — {item.reason or 'no reason'}")
+        lines.append("使用 /mcp approve <name> 或 /mcp reject <name>。")
+        return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+    if action in {"approve", "reject"}:
+        if not name:
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 用法: /mcp {action} <name>",
+            )
+        proposal = store.get(name)
+        if proposal is None or proposal.status != "pending":
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 未找到待审批提案 `{name}`。")
+        if action == "reject":
+            store.set_status(name, "rejected")
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 已拒绝 MCP 提案 `{name}`。")
+        try:
+            config = proposal_to_server_config(proposal)
+        except ValueError as exc:
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 提案无效: {exc}")
+        if ctx.home:
+            persist_mcp_server_to_config(ctx.home, name, config)
+        store.set_status(name, "approved")
+        if ctx.on_mcp_approved:
+            ctx.on_mcp_approved(name, config)
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 已批准并启用 MCP `{name}`。",
+        )
+
+    return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 用法: /mcp [list|approve|reject]")
+
+
 _HANDLERS = {
     "help": _cmd_help,
     "commands": _cmd_commands,
@@ -439,4 +555,6 @@ _HANDLERS = {
     "tools": _cmd_tools,
     "retry": _cmd_retry,
     "undo": _cmd_undo,
+    "goal": _cmd_goal,
+    "mcp": _cmd_mcp,
 }

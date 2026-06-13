@@ -390,7 +390,7 @@ def _ensure_evolux_layout(target: Path) -> None:
         (target / sub).mkdir(parents=True, exist_ok=True)
     registry = target / "agents" / "registry.json"
     if not registry.exists():
-        registry.write_text(json.dumps({"agents": []}, indent=2), encoding="utf-8")
+        registry.write_text("{}\n", encoding="utf-8")
 
 
 def migrate_from_hermes(

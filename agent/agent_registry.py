@@ -33,7 +33,28 @@ class AgentDefinition:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AgentDefinition:
-        return cls(**data)
+        if not isinstance(data, dict):
+            raise TypeError(f"AgentDefinition expects dict, got {type(data).__name__}")
+        fields = {field.name for field in cls.__dataclass_fields__.values()}
+        return cls(**{key: value for key, value in data.items() if key in fields})
+
+
+def _normalize_registry(raw: Any) -> dict[str, dict[str, Any]]:
+    """Accept legacy ``{\"agents\": [...]}`` and flat agent-id maps."""
+    if not isinstance(raw, dict):
+        return {}
+    normalized: dict[str, dict[str, Any]] = {}
+    legacy = raw.get("agents")
+    if isinstance(legacy, list):
+        for item in legacy:
+            if isinstance(item, dict) and item.get("agent_id"):
+                normalized[str(item["agent_id"])] = item
+    for key, value in raw.items():
+        if key == "agents":
+            continue
+        if isinstance(value, dict) and value.get("agent_id"):
+            normalized[str(value.get("agent_id", key))] = value
+    return normalized
 
 
 class AgentRegistry:
@@ -49,7 +70,11 @@ class AgentRegistry:
     def _read(self) -> dict[str, dict[str, Any]]:
         if not self.path.exists():
             return {}
-        return json.loads(self.path.read_text(encoding="utf-8"))
+        raw = json.loads(self.path.read_text(encoding="utf-8"))
+        normalized = _normalize_registry(raw)
+        if isinstance(raw, dict) and "agents" in raw and isinstance(raw.get("agents"), list):
+            self._write(normalized)
+        return normalized
 
     def _write(self, data: dict[str, dict[str, Any]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

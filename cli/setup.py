@@ -77,7 +77,7 @@ def run_setup(
 
     registry = base / "agents" / "registry.json"
     if not registry.exists():
-        registry.write_text('{"agents": []}\n', encoding="utf-8")
+        registry.write_text("{}\n", encoding="utf-8")
 
     _seed_bundled_skills(base)
 

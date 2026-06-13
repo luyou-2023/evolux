@@ -1,4 +1,5 @@
 from agent.agent_registry import AgentDefinition, AgentRegistry
+import json
 
 
 def test_agent_registry_register_and_get(evolux_home):
@@ -57,3 +58,33 @@ def test_agent_registry_retire_soft_deletes(evolux_home):
     registry.retire("old")
     assert registry.get("old") is None
     assert registry.get("old", include_retired=True) is not None
+
+
+def test_agent_registry_legacy_agents_array(evolux_home):
+    path = evolux_home / "agents" / "registry.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """{
+  "agents": [],
+  "_session-monitor": {
+    "agent_id": "_session-monitor",
+    "assistant_id": "default",
+    "name": "Session Monitor",
+    "domain": "orchestration",
+    "description": "internal",
+    "system_prompt_template": "",
+    "toolsets": [],
+    "skills": [],
+    "mcp_servers": [],
+    "retired": false,
+    "stats": {}
+  }
+}""",
+        encoding="utf-8",
+    )
+    registry = AgentRegistry(home=evolux_home)
+    agents = registry.list_by_assistant("default")
+    assert len(agents) == 1
+    assert agents[0].agent_id == "_session-monitor"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert "agents" not in raw

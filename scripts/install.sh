@@ -77,6 +77,7 @@ PY
         exit 1
     fi
     log_ok "Python: $($PY --version)"
+    PY="$("$PY" -c 'import sys; print(sys.executable)')"
 }
 
 clone_or_update() {

@@ -42,7 +42,13 @@ def resolve_evolux_argv(profile: str = "") -> list[str]:
 
 def _service_path_env() -> str:
     local_bin = Path.home() / ".local/bin"
-    parts = [str(local_bin), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+    parts = [
+        str(local_bin),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
     seen: set[str] = set()
     ordered: list[str] = []
     for part in parts:

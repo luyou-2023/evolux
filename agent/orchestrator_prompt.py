@@ -30,10 +30,10 @@ def build_orchestrator_system_prompt(*, max_concurrent_subagents: int = 3) -> st
 
 路由预检块仅为参考信号，最终决策权在你。
 
-## 代码执行（Python/脚本/仓库改动）
-- 委派前 `list_subagents` / `search_subagents`，**优先** `mcp_servers` 含 opencode/devtools 的专家（如 opencode-summary-expert）
-- 勿委派仅有 terminal/write_file、无 MCP 绑定的浅层 code-dev-expert 做「通过 opencode 写代码」类任务
-- `create_subagent` 且 domain=code 时**必须**填写 `mcp_servers`（从 config.yaml 已有服务名选取）
+## 代码执行（Python/脚本/运行要结果）
+- **必须** `dispatch_subagent` — 禁止主控自行 write_file/terminal，禁止复用 SOLUTIONS 旧结果
+- 委派前 `list_subagents`，优先 `mcp_servers` 含 opencode 的专家（如 **code-dev-expert**）
+- `create_subagent` domain=code 时必须填 `mcp_servers`
 
 ## 追问与上下文（处理不丢）
 - 「谁写的 / 用什么工具 / 是否 opencode」等**追问**：先查本会话历史与 SOLUTIONS/上一轮协调记录，**主控直接汇总**，勿盲目 re-dispatch

@@ -18,7 +18,14 @@ from agent.orchestrator import OrchestratorAgent
 from agent.orchestrator_prompt import build_orchestrator_system_prompt
 from agent.planning_state import TurnPlanningState
 from agent.session_plan import load_session_plan, save_session_plan
-from agent.routing import FusionWeights, RoutingContext, SubAgentCandidate, fuse_routing
+from agent.routing import (
+    FusionWeights,
+    RoutingContext,
+    SubAgentCandidate,
+    execution_task_prompt_block,
+    fuse_routing,
+    looks_like_execution_task,
+)
 from agent.sedimentation import build_dispatch_context_slice, sediment_agent_task, sediment_turn_solution
 from agent.settings import Settings, load_settings
 from agent.session_monitor import (
@@ -134,10 +141,15 @@ class EvoluxAgent:
             top_k=self.settings.routing.subagent_top_k,
         )
         subagent_candidates: list[SubAgentCandidate] = []
+        agent_mcp: dict[str, bool] = {}
+        agent_domains: dict[str, str] = {}
         for agent_id, score, meta in raw_hits:
             registry_agent = self.agent_registry.get(agent_id)
             skills = registry_agent.skills if registry_agent else list(meta.get("skills", []))
             recency_boost = _recency_boost(registry_agent)
+            if registry_agent:
+                agent_mcp[agent_id] = bool(registry_agent.mcp_servers)
+                agent_domains[agent_id] = registry_agent.domain
             subagent_candidates.append(
                 SubAgentCandidate(
                     agent_id=agent_id,
@@ -148,7 +160,14 @@ class EvoluxAgent:
                     recency_boost=recency_boost,
                 )
             )
-        return fuse_routing(skill_candidates, subagent_candidates, self._fusion_weights())
+        return fuse_routing(
+            skill_candidates,
+            subagent_candidates,
+            self._fusion_weights(),
+            user_message=user_message,
+            agent_mcp=agent_mcp,
+            agent_domains=agent_domains,
+        )
 
     def _fusion_weights(self) -> FusionWeights:
         assistant = self.assistant_registry.get(self.assistant_id)
@@ -162,6 +181,7 @@ class EvoluxAgent:
         *,
         include_memory: bool = True,
         session_key: str = "",
+        user_message: str = "",
     ) -> list[dict[str, Any]]:
         prefix: list[dict[str, Any]] = []
         prefix.append(
@@ -190,6 +210,8 @@ class EvoluxAgent:
                 prefix.append({"role": "system", "content": "\n\n".join(memory_parts)})
         if routing.prompt_block:
             prefix.append({"role": "system", "content": routing.prompt_block})
+        if looks_like_execution_task(user_message):
+            prefix.append({"role": "system", "content": execution_task_prompt_block()})
         skill_names = routing.suggested_skills[:3]
         if skill_names:
             skill_block = self.skill_router.load_for_execution(skill_names)
@@ -321,7 +343,9 @@ class EvoluxAgent:
 
         self._turn_planning.reset(user_message=user_message, session_key=session_key)
         self._turn_planning.routing = routing
-        prefix = self._build_prefix_messages(routing, session_key=session_key)
+        prefix = self._build_prefix_messages(
+            routing, session_key=session_key, user_message=user_message
+        )
         turn_messages = history + [{"role": "user", "content": user_message}]
         tools = get_agent_tool_definitions(platform=platform)
         if self.settings.routing.trim_tools:

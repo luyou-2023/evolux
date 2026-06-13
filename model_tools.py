@@ -42,6 +42,8 @@ def get_tool_definitions(
             tool_names |= resolve_toolset(name)
     else:
         tool_names = resolve_platform_toolsets(platform)
+    if platform == "cron":
+        tool_names.discard("cronjob")
     if extra_tools:
         tool_names |= set(extra_tools)
     if include_mcp:

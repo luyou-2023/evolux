@@ -21,6 +21,7 @@ _EVOLUX_CORE_TOOLS = [
     "retire_subagent",
     "plan_task",
     "propose_mcp_server",
+    "cronjob",
     "clarify",
 ]
 
@@ -60,6 +61,11 @@ TOOLSETS: dict[str, dict[str, Any]] = {
         "tools": ["web_search", "web_extract"],
         "includes": [],
     },
+    "cronjob": {
+        "description": "Hermes-compatible scheduled job management",
+        "tools": ["cronjob"],
+        "includes": [],
+    },
     "evolux-orchestrator": {
         "description": "Evolux orchestrator coordination tools",
         "tools": [
@@ -71,6 +77,7 @@ TOOLSETS: dict[str, dict[str, Any]] = {
             "retire_subagent",
             "plan_task",
             "propose_mcp_server",
+            "cronjob",
             "clarify",
             "skills_list",
             "skill_view",
@@ -115,6 +122,7 @@ TOOLSETS: dict[str, dict[str, Any]] = {
             "retire_subagent",
             "plan_task",
             "propose_mcp_server",
+            "cronjob",
             "clarify",
         ],
         "includes": [],
@@ -142,6 +150,7 @@ DELEGATE_BLOCKED_TOOLS = frozenset(
         "search_subagents",
         "list_subagents",
         "clarify",
+        "cronjob",
     }
 )
 

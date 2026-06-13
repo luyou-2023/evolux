@@ -119,6 +119,7 @@ def _cmd_help(_ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
         "/tools — 列出当前可用工具",
         "/goal [add|done|clear] — 跨会话目标管理",
         "/mcp [list|approve|reject] — MCP 提案审批",
+        "/cron [list|add|pause|resume|run|remove] — 定时任务（Hermes 兼容）",
         "/retry — 重试上一条用户消息",
         "/undo — 撤销上一轮对话",
     ]
@@ -539,6 +540,105 @@ def _cmd_mcp(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
     return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 用法: /mcp [list|approve|reject]")
 
 
+def _cmd_cron(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    from cron.schedule import parse_schedule
+    from cron.store import CronJobStore
+
+    store = CronJobStore(home=ctx.home)
+    parts = args.split(None, 1)
+    action = parts[0].lower() if parts else "list"
+    body = parts[1].strip() if len(parts) > 1 else ""
+
+    if action in {"list", ""}:
+        jobs = store.list_jobs()
+        if not jobs:
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 尚无定时任务。")
+        lines = [f"{MONITOR_PREFIX} · 定时任务 ({len(jobs)}):"]
+        for job in jobs:
+            lines.append(
+                f"• {job.id} [{job.state}] {job.schedule.get('display')} next={job.next_run_at or '-'}"
+            )
+        return SlashCommandOutcome(handled=True, reply="\n".join(lines))
+
+    if action == "add":
+        if not body:
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 用法: /cron add <schedule> <prompt>",
+            )
+        words = body.split()
+        schedule = ""
+        prompt = ""
+        for idx in range(len(words), 0, -1):
+            candidate = " ".join(words[:idx])
+            try:
+                parse_schedule(candidate)
+            except ValueError:
+                continue
+            schedule = candidate
+            prompt = " ".join(words[idx:]).strip()
+            break
+        if not schedule or not prompt:
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 无法解析 schedule/prompt，示例: /cron add every 2h 检查服务状态",
+            )
+        job = store.create(
+            schedule=schedule,
+            prompt=prompt,
+            assistant_id=ctx.assistant_id,
+            origin_session_key=ctx.session_key,
+            deliver="origin",
+        )
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 已创建定时任务 `{job.id}`，下次运行 {job.next_run_at}",
+        )
+
+    if action in {"pause", "resume", "remove", "run"}:
+        job_id = body.strip()
+        if not job_id:
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 用法: /cron {action} <job_id>",
+            )
+        job = store.get(job_id)
+        if job is None:
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 未找到任务 `{job_id}`。")
+        if action == "pause":
+            job.state = "paused"
+            job.enabled = False
+            store.save(job)
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 已暂停 `{job.id}`。")
+        if action == "resume":
+            job.state = "scheduled"
+            job.enabled = True
+            job.ensure_next_run()
+            store.save(job)
+            return SlashCommandOutcome(
+                handled=True,
+                reply=f"{MONITOR_PREFIX} · 已恢复 `{job.id}`，next={job.next_run_at}",
+            )
+        if action == "remove":
+            store.remove(job.id)
+            return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 已删除 `{job.id}`。")
+        from datetime import datetime, timezone
+
+        from cron.schedule import format_iso
+
+        job.next_run_at = format_iso(datetime.now(timezone.utc))
+        store.save(job)
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 已排队立即运行 `{job.id}`（等待 gateway/cron tick）。",
+        )
+
+    return SlashCommandOutcome(
+        handled=True,
+        reply=f"{MONITOR_PREFIX} · 用法: /cron [list|add|pause|resume|run|remove]",
+    )
+
+
 _HANDLERS = {
     "help": _cmd_help,
     "commands": _cmd_commands,
@@ -557,4 +657,5 @@ _HANDLERS = {
     "undo": _cmd_undo,
     "goal": _cmd_goal,
     "mcp": _cmd_mcp,
+    "cron": _cmd_cron,
 }

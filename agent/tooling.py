@@ -29,6 +29,7 @@ def build_combined_tool_executor(
     *,
     assistant_id: str = "default",
     subagent: bool = False,
+    session_key: str = "",
 ) -> Callable[[dict[str, Any]], str]:
     ensure_tools_loaded()
     orchestrator_exec = build_tool_executor(ctx)
@@ -38,14 +39,25 @@ def build_combined_tool_executor(
         arguments = tool_call.get("arguments", {})
         if isinstance(arguments, str):
             arguments = json.loads(arguments) if arguments else {}
+        active_session = session_key or (
+            ctx.turn_planning.session_key if ctx.turn_planning is not None else ""
+        )
 
         if subagent and name in DELEGATE_BLOCKED_TOOLS:
             return json.dumps({"error": f"tool blocked for subagent: {name}"}, ensure_ascii=False)
 
+        if name == "cronjob" and ":cron:" in active_session and ":job:" in active_session:
+            return json.dumps({"error": "tool blocked for cron job sessions"}, ensure_ascii=False)
+
         if name in ORCHESTRATOR_TOOL_NAMES:
             return orchestrator_exec(tool_call)
 
-        return handle_function_call(name, arguments, assistant_id=assistant_id)
+        return handle_function_call(
+            name,
+            arguments,
+            assistant_id=assistant_id,
+            origin_session_key=active_session,
+        )
 
     return _executor
 

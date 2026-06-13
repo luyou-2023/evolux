@@ -134,8 +134,27 @@ async def run_webhook_server(
     await site.start()
     logger.info("Evolux gateway listening on http://%s:%s", host, port)
 
+    cron_task: asyncio.Task | None = asyncio.create_task(_run_cron_ticker(home))
+    app["_cron_task"] = cron_task
     try:
         while True:
             await asyncio.sleep(3600)
     finally:
+        if cron_task is not None:
+            cron_task.cancel()
         await web_runner.cleanup()
+
+
+async def _run_cron_ticker(home: Path) -> None:
+    from agent.runtime import bootstrap, create_llm_call
+    from cron.scheduler import CronScheduler, register_cron_scheduler
+
+    base, settings = bootstrap(home)
+    llm_call = create_llm_call(base, settings)
+    scheduler = CronScheduler(home=base)
+    register_cron_scheduler(scheduler, home=base, llm_call=llm_call, settings=settings)
+    interval = float(settings.cron.tick_seconds)
+    loop = asyncio.get_running_loop()
+    while True:
+        await loop.run_in_executor(None, scheduler.tick)
+        await asyncio.sleep(interval)

@@ -63,6 +63,8 @@ class VectorSettings:
 @dataclass
 class CronSettings:
     jobs: list[dict] = field(default_factory=list)
+    tick_seconds: float = 60.0
+    wrap_response: bool = True
 
 
 @dataclass
@@ -191,7 +193,11 @@ def load_settings(home: Path | None = None) -> Settings:
     cron = raw.get("cron", {})
     if isinstance(cron, dict):
         jobs = cron.get("jobs") or []
-        settings.cron = CronSettings(jobs=list(jobs) if isinstance(jobs, list) else [])
+        settings.cron = CronSettings(
+            jobs=list(jobs) if isinstance(jobs, list) else [],
+            tick_seconds=float(cron.get("tick_seconds", settings.cron.tick_seconds)),
+            wrap_response=bool(cron.get("wrap_response", settings.cron.wrap_response)),
+        )
 
     monitor = raw.get("monitor", {})
     if isinstance(monitor, dict):

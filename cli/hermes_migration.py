@@ -250,9 +250,10 @@ def _upgrade_feishu_assistants_for_coexistence(
         if not isinstance(feishu, dict):
             continue
         current = str(feishu.get("mode") or "webhook").lower()
-        if current in {"shared_hermes", "hermes", "shared"}:
-            feishu["mode"] = target_mode
-            changed.append(f"{assistant_id}:{target_mode}")
+        if current in {"shared_hermes", "hermes", "shared", "webhook", "auto"}:
+            if feishu.get("mode") != target_mode:
+                feishu["mode"] = target_mode
+                changed.append(f"{assistant_id}:{target_mode}")
     return changed
 
 

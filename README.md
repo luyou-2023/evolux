@@ -1,77 +1,79 @@
 # Evolux
 
-**自托管、可进化的多 Agent 协作运行时** — 主控 Agent 负责理解、协调与记忆；领域子 Agent 负责深度执行。数据在你自己的机器上，能力随使用沉淀。
+**Languages:** [English](README.md) · [简体中文](README.zh-CN.md)
 
-一条命令安装，飞书 / CLI / 编辑器 ACP 统一接入。已用 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 的用户可一键迁移记忆、Skills 与定时任务。
+**Self-hosted, evolving multi-agent runtime** — an orchestrator understands, coordinates, and remembers; domain expert sub-agents execute deeply. Your data stays on your machine; capabilities compound over time.
 
----
-
-## 为什么选择 Evolux？
-
-大多数 Agent 是「一个大脑包打天下」：临时委派、用完即丢、路由靠模型临场发挥。复杂任务容易上下文膨胀、重复踩坑、成本难控。
-
-Evolux 把**协调**和**执行**拆开，并让它们**越用越强**：
-
-| | 典型单 Agent | Evolux |
-|---|-------------|--------|
-| **结构** | 单 Agent + 临时 delegate | **持久主控** + **领域专家子 Agent 池** |
-| **路由** | 模型自行决定是否委派 | **Skill 识别 + 向量检索 + 主控推理** 三重融合 |
-| **专家** | 每次从零开始 | 可创建、可检索、**重复任务自动晋升**为专家 |
-| **记忆** | 会话内有效 | 全局 MEMORY / USER + **回合后沉淀** + 方案库 SOLUTIONS |
-| **迭代预算** | 单一上限 | 主控 **30 轮**协调 / 子 Agent **90 轮**深执行，成本可控 |
-| **多助手** | Profile 隔离 | **同平台多助手**，Session / 记忆 / 路由独立 |
-| **Hermes 用户** | — | 工具 / MCP / Cron / ACP **兼容**，`migrate from-hermes` 导入沉淀 |
-
-```
-你（飞书 / CLI / 编辑器）
-        │
-        ▼
-   Gateway ── 多助手、Webhook、Dashboard
-        │
-        ▼
-  主控 Agent ── 规划、记忆、/goal、Session Monitor
-        │
-        ├── Skill 识别 ──┐
-        ├── 向量检索专家 ─┼── 三重路由 → 选对子 Agent
-        └── 主控推理 ────┘
-        │
-        ▼
-  子 Agent 池 ── 预加载 Skill、深执行、MCP 工具
-        │
-        ▼
-  沉淀 ── MEMORY · SOLUTIONS · 专家晋升 · Cron 复用
-```
-
-**适合谁：** 希望 Agent「像团队一样协作」、任务有领域分工、长期使用要积累经验的开发者与小团队。
+One-line install. Unified access from CLI, Feishu, and editor ACP. [Hermes Agent](https://github.com/NousResearch/hermes-agent) users can migrate memories, Skills, and cron jobs in one step.
 
 ---
 
-## 安装
+## Why Evolux?
 
-### 一键安装（推荐）
+Most agents use a single brain for everything: ad-hoc delegation, no persistent experts, routing left to the model in the moment. Complex work inflates context, repeats mistakes, and burns tokens.
+
+Evolux **separates coordination from execution** and makes both **stronger over time**:
+
+| | Typical single agent | Evolux |
+|---|---------------------|--------|
+| **Structure** | One agent + ephemeral delegate | **Persistent orchestrator** + **domain expert pool** |
+| **Routing** | Model decides delegation ad hoc | **Skill ID + vector retrieval + orchestrator reasoning** (triple fusion) |
+| **Experts** | Start from scratch each time | Create, retrieve, **auto-promote** on repeat tasks |
+| **Memory** | Session-scoped | Global MEMORY / USER + **post-turn sedimentation** + SOLUTIONS library |
+| **Iteration budget** | Single limit | Orchestrator **30** turns / sub-agents **90** turns — cost-controlled |
+| **Multi-assistant** | Profile isolation only | **Multiple assistants on one platform**, isolated sessions & routing |
+| **Hermes users** | — | Compatible tools / MCP / Cron / ACP + `migrate from-hermes` |
+
+```
+You (Feishu / CLI / Editor)
+        │
+        ▼
+   Gateway — multi-assistant, webhooks, dashboard
+        │
+        ▼
+  Orchestrator — planning, memory, /goal, Session Monitor
+        │
+        ├── Skill identification ──┐
+        ├── Vector expert search ──┼── triple routing → right sub-agent
+        └── Orchestrator reasoning ┘
+        │
+        ▼
+  Sub-agent pool — Skill preload, deep execution, MCP tools
+        │
+        ▼
+  Sediment — MEMORY · SOLUTIONS · expert promotion · Cron reuse
+```
+
+**Built for:** developers and small teams who want agents to **collaborate like a team**, with domain division of labor and compounding experience over months.
+
+---
+
+## Installation
+
+### One-line install (recommended)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/luyou-2023/evolux/main/scripts/install.sh | bash
 ```
 
-安装脚本会：
+The installer will:
 
-- 克隆代码到 `~/.evolux/evolux` 并安装 CLI
-- 写入 `~/.local/bin/evolux`，配置 PATH
-- 运行 `evolux setup`，**自动检测 Hermes**（`~/.hermes` / profiles / `$HERMES_HOME`）并询问是否导入
+- Clone into `~/.evolux/evolux` and install the CLI
+- Add `~/.local/bin/evolux` to your PATH
+- Run `evolux setup`, **auto-detect Hermes** (`~/.hermes`, profiles, `$HERMES_HOME`) and offer import
 
-### 从 Hermes 迁移
+### Migrate from Hermes
 
 ```bash
-evolux migrate detect                         # 查看本机 Hermes 安装与 profile
-evolux migrate from-hermes --dry-run          # 预览将迁移的内容
-evolux migrate from-hermes --preset full      # 含 .env 密钥
-evolux setup --from-hermes                      # 首次 setup 时自动导入
+evolux migrate detect                         # list local Hermes installs & profiles
+evolux migrate from-hermes --dry-run          # preview migration
+evolux migrate from-hermes --preset full      # include .env secrets
+evolux setup --from-hermes                    # auto-import on first setup
 ```
 
-迁移内容：MEMORY / USER、Skills、Cron、`config.yaml`（LLM / MCP / Gateway）、会话库归档；子 Agent 注册表由 Evolux 路由与专家晋升逐步填充。
+Imports: MEMORY / USER, Skills, Cron, `config.yaml` (LLM / MCP / Gateway), session DB archive. Sub-agent registry fills via routing and expert promotion.
 
-### 开发者安装
+### Developer install
 
 ```bash
 git clone https://github.com/luyou-2023/evolux.git
@@ -82,51 +84,42 @@ pip install -e ".[dev,gateway]"
 evolux setup
 ```
 
-### 配置 API Key
+### API keys
 
-在 `~/.evolux/.env` 中写入（任选其一）：
+Add to `~/.evolux/.env`:
 
 ```bash
 DEEPSEEK_API_KEY=sk-...
 # OPENAI_API_KEY=sk-...
 ```
 
-默认模型为 DeepSeek，可在 `~/.evolux/config.yaml` 的 `llm` 段修改。
+Default model is DeepSeek; change under `llm` in `~/.evolux/config.yaml`.
 
-### 卸载
+### Uninstall
 
 ```bash
-evolux uninstall              # 交互：仅删程序 / 连同数据一起删
-evolux uninstall --keep-data  # 保留 ~/.evolux
-evolux uninstall --full --yes # 完全清除
+evolux uninstall              # interactive: code only vs full wipe
+evolux uninstall --keep-data  # keep ~/.evolux
+evolux uninstall --full --yes # remove everything
 ```
 
 ---
 
-## 5 分钟上手
+## Get started in 5 minutes
 
 ```bash
-# 1. 初始化（若尚未 setup）
 evolux setup
-
-# 2. 对话 — 主控会自动路由到子 Agent
-evolux chat
-
-# 3. 看协调过程（工具 / 子 Agent / MCP）
-evolux chat --trace
-
-# 4. 安装 Skill 并重建索引
+evolux chat                   # orchestrator routes to sub-agents automatically
+evolux chat --trace           # show tools / sub-agents / MCP trace
 evolux skills install git
 evolux skills reindex
-
-# 5. 定时任务（Hermes 兼容）
-evolux cron create "every 2h" "检查服务健康并摘要" --name health
+evolux cron create "every 2h" "Summarize service health" --name health
 evolux cron list
 ```
 
-会话内可用 Hermes 风格 slash 命令：`/help` `/new` `/compress` `/goal` `/cron` `/skills` 等。
+In-session Hermes-style slash commands: `/help` `/new` `/compress` `/goal` `/cron` `/skills` …
 
-多 Profile（与 Hermes `-p` 一致）：
+Profiles (Hermes-compatible `-p`):
 
 ```bash
 evolux -p work chat
@@ -135,111 +128,111 @@ evolux -p personal setup
 
 ---
 
-## 日常使用
+## Daily commands
 
-| 命令 | 说明 |
-|------|------|
-| `evolux chat` | 交互式主控会话 |
-| `evolux chat --once "…"` | 单轮问答 |
-| `evolux chat --trace` | 显示编排 trace |
-| `evolux tui` | 终端会话 / 助手浏览 |
-| `evolux dashboard start` | Web 面板 `http://localhost:8787/dashboard` |
-| `evolux gateway start` | 飞书 Webhook + Dashboard |
-| `evolux cron list/create/tick` | 定时任务管理 |
-| `evolux skills list/install/reindex` | Skill 管理 |
-| `evolux assistant list` | 多助手列表 |
-| `evolux acp start` | 编辑器 ACP 适配（Cursor 等） |
-| `evolux migrate detect` | 检测 Hermes 安装 |
-| `eval "$(evolux completion zsh)"` | Shell 补全 |
-
----
-
-## 飞书接入
-
-1. 配置助手：`evolux assistant bind feishu <assistant_id> …`
-2. 在飞书开放平台将事件订阅指向：
-
-```
-http://<你的主机>:8787/webhook/feishu/<assistant_id>
-```
-
-3. 启动 Gateway：`evolux gateway start`
-
-主控回复会自动回传飞书；协调进度、clarify 卡片、slash 命令在飞书内可用。
+| Command | Description |
+|---------|-------------|
+| `evolux chat` | Interactive orchestrator session |
+| `evolux chat --once "…"` | Single-turn reply |
+| `evolux chat --trace` | Orchestration trace on stderr |
+| `evolux tui` | Terminal session / assistant browser |
+| `evolux dashboard start` | Web UI at `http://localhost:8787/dashboard` |
+| `evolux gateway start` | Feishu webhook + dashboard |
+| `evolux cron list/create/tick` | Scheduled jobs |
+| `evolux skills list/install/reindex` | Skill management |
+| `evolux assistant list` | Multi-assistant list |
+| `evolux acp start` | Editor ACP adapter (Cursor, etc.) |
+| `evolux migrate detect` | Detect Hermes installs |
+| `eval "$(evolux completion zsh)"` | Shell tab completion |
 
 ---
 
-## 架构亮点（深入）
+## Feishu integration
 
-### 三重路由，不赌模型一次猜对
+1. Bind assistant: `evolux assistant bind feishu <assistant_id> …`
+2. Point Feishu event subscription to:
 
-每一轮用户消息经过三条信号融合：**Skill 关键词/向量识别**、**子 Agent 向量检索**、**主控 LLM 推理**。未命中时动态 `create_subagent`，重复任务可 **自动晋升** 为持久专家。
+```
+http://<your-host>:8787/webhook/feishu/<assistant_id>
+```
 
-### 分层迭代，省钱又够深
+3. Start gateway: `evolux gateway start`
 
-主控默认 **30 轮** — 足够规划、委派、汇总；子 Agent 默认 **90 轮** — 专注单一领域深挖。避免「一个 Agent 又当经理又当工人」导致的 token 浪费。
+Replies, coordination progress, clarify cards, and slash commands work inside Feishu.
 
-### 记忆与沉淀，越用越懂你
+---
 
-- 启动时注入 **MEMORY.md / USER.md** 冻结快照（利于 prefix cache）
-- 回合结束后 **自动沉淀** 到全局 MEMORY 与 Agent 级 MEMORY
-- 成功方案写入 **SOLUTIONS.md**，同类任务下次直接复用
-- `/goal` 跨会话目标；FTS5 **session_search** 检索历史
+## Architecture highlights
 
-### Hermes 生态兼容，平滑升级
+### Triple routing — don’t bet on one model guess
 
-工具名、MCP 前缀、`cronjob`、Skills 渐进式披露、ACP 会话持久化 — 与 Hermes 对齐。已有 Hermes 沉淀无需从零开始。
+Every user message fuses **Skill keyword/vector ID**, **sub-agent vector retrieval**, and **orchestrator LLM reasoning**. On miss, `create_subagent` dynamically; repeat tasks **auto-promote** to persistent experts.
 
-### 自托管、数据归你
+### Tiered iteration — deep enough, affordable
+
+Orchestrator default **30 turns** for plan → delegate → summarize. Sub-agents default **90 turns** for focused domain work. Avoids one agent acting as both manager and worker.
+
+### Memory & sedimentation — learns over time
+
+- **MEMORY.md / USER.md** frozen snapshot at session start (prefix-cache friendly)
+- **Post-turn sedimentation** to global and per-agent MEMORY
+- **SOLUTIONS.md** for reusable playbooks
+- `/goal` for cross-session objectives; FTS5 **session_search**
+
+### Hermes-compatible upgrade path
+
+Tool names, MCP prefix, `cronjob`, progressive Skill disclosure, ACP session persistence — aligned with Hermes. Existing Hermes sediment imports in one command.
+
+### Self-hosted — your data, your machine
 
 ```
 ~/.evolux/
-├── config.yaml          # 模型、路由、Gateway、MCP
-├── .env                 # API 密钥
-├── state.db             # 会话 + FTS5
+├── config.yaml          # model, routing, gateway, MCP
+├── .env                 # API keys
+├── state.db             # sessions + FTS5
 ├── memories/            # MEMORY · USER · SOLUTIONS
-├── agents/registry.json # 持久子 Agent 专家
-├── skills/              # Skill 定义
-├── cron/jobs.json       # 定时任务
-└── vector/              # Skill / 子 Agent 向量索引
+├── agents/registry.json # persistent sub-agent experts
+├── skills/              # Skill definitions
+├── cron/jobs.json       # scheduled jobs
+└── vector/              # Skill & sub-agent indexes
 ```
 
 ---
 
-## 配置速查
+## Configuration quick reference
 
-`~/.evolux/config.yaml` 常用项：
-
-| 配置 | 默认 | 说明 |
-|------|------|------|
-| `orchestrator.max_iterations` | 30 | 主控迭代上限 |
-| `subagent.max_iterations` | 90 | 子 Agent 迭代上限 |
-| `orchestrator.max_concurrent_subagents` | 3 | 并行子 Agent 数 |
-| `llm.provider` / `llm.model` | deepseek / deepseek-chat | 模型 |
-| `gateway.port` | 8787 | Gateway / Dashboard 端口 |
-| `mcp_servers` | `{}` | MCP stdio/HTTP 服务 |
-| `sedimentation.enabled` | true | 回合后 MEMORY 沉淀 |
-| `expert_promotion.enabled` | true | 重复任务自动建专家 |
-| `vector.backend` | sqlite-vec | 向量后端 |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `orchestrator.max_iterations` | 30 | Orchestrator turn limit |
+| `subagent.max_iterations` | 90 | Sub-agent turn limit |
+| `orchestrator.max_concurrent_subagents` | 3 | Parallel sub-agents |
+| `llm.provider` / `llm.model` | deepseek / deepseek-chat | LLM |
+| `gateway.port` | 8787 | Gateway & dashboard port |
+| `mcp_servers` | `{}` | MCP stdio/HTTP servers |
+| `sedimentation.enabled` | true | Post-turn MEMORY writeback |
+| `expert_promotion.enabled` | true | Auto-create experts on repeat |
+| `vector.backend` | sqlite-vec | Vector store backend |
 
 ---
 
-## 文档
+## Documentation
 
-| 文档 | 内容 |
-|------|------|
-| [系统架构](docs/design/01-系统架构文档.md) | 主控/子 Agent、三重路由、Gateway、记忆模型 |
-| [详细设计](docs/design/02-详细设计文档.md) | 模块接口、数据结构、配置 schema |
-| [实施计划](docs/design/03-实施计划.md) | Phase 里程碑与实现进度 |
+| Document | Content |
+|----------|---------|
+| [Architecture](docs/en/design/01-architecture.md) | Orchestrator, sub-agents, triple routing, gateway |
+| [Detailed design](docs/en/design/02-detailed-design.md) | Modules, data structures, config schema |
+| [Implementation plan](docs/en/design/03-implementation-plan.md) | Phases & milestones |
+| [中文文档](docs/zh-CN/README.md) | 简体中文设计文档 |
+| [All languages](docs/README.md) | Documentation index |
 
 ---
 
-## 开发
+## Development
 
 ```bash
 pip install -e ".[dev,gateway]"
-pytest -m "not live"          # 单元测试（209+）
-pytest -m live                # 需 DEEPSEEK_API_KEY 的 live 测试
+pytest -m "not live"          # unit tests (209+)
+pytest -m live                # live DeepSeek tests (needs API key)
 ```
 
-MIT License · 基于 [Hermes Agent](https://github.com/NousResearch/hermes-agent) 架构演进，针对多 Agent 协调与持久专家优化。
+MIT License · Evolved from [Hermes Agent](https://github.com/NousResearch/hermes-agent), optimized for multi-agent coordination and persistent domain experts.

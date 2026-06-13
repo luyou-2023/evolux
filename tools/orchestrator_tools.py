@@ -11,7 +11,11 @@ from agent.agent_registry import AgentDefinition
 from agent.mcp_proposals import MCPProposal, MCPProposalStore
 from agent.planning_state import TurnPlanningState
 from agent.routing import RoutingContext, routing_decision_hints
-from agent.sedimentation import build_default_system_prompt, default_toolsets_for_domain
+from agent.sedimentation import (
+    build_default_system_prompt,
+    default_mcp_servers_for_domain,
+    default_toolsets_for_domain,
+)
 from agent.session_monitor import is_internal_agent
 
 
@@ -29,21 +33,41 @@ class OrchestratorToolContext:
     home: Path | None = None
 
 
+def _load_config_mcp_servers(home: Path | None) -> dict[str, Any]:
+    if home is None:
+        return {}
+    config_path = home / "config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except OSError:
+        return {}
+    mcp = raw.get("mcp_servers")
+    return {str(k): v for k, v in mcp.items()} if isinstance(mcp, dict) else {}
+
+
 def _routing_defaults(
     ctx: OrchestratorToolContext,
     *,
     skills: list[str],
     domain: str,
     toolsets: list[str],
-) -> tuple[list[str], list[str]]:
+    mcp_servers: list[str],
+) -> tuple[list[str], list[str], list[str]]:
     resolved_skills = list(skills)
     resolved_toolsets = list(toolsets)
+    resolved_mcp = list(mcp_servers)
     routing = ctx.turn_planning.routing if ctx.turn_planning else None
     if not resolved_skills and routing:
         resolved_skills = list(routing.suggested_skills[:5])
     if not resolved_toolsets:
         resolved_toolsets = default_toolsets_for_domain(domain)
-    return resolved_skills, resolved_toolsets
+    if not resolved_mcp and (domain or "").lower() == "code":
+        resolved_mcp = default_mcp_servers_for_domain(domain, _load_config_mcp_servers(ctx.home))
+    return resolved_skills, resolved_toolsets, resolved_mcp
 
 
 def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: OrchestratorToolContext) -> str:
@@ -55,11 +79,27 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
     if name == "search_subagents":
         query = arguments.get("query", "")
         routing = ctx.prepare_routing(query)
+        expert_profiles: list[dict[str, Any]] = []
+        for item in routing.fused_ranking[:8]:
+            agent = ctx.agent_registry.get(item.agent_id)
+            if agent is None:
+                continue
+            expert_profiles.append(
+                {
+                    "agent_id": agent.agent_id,
+                    "domain": agent.domain,
+                    "mcp_servers": agent.mcp_servers,
+                    "toolsets": agent.toolsets,
+                    "has_mcp": bool(agent.mcp_servers),
+                    "final_score": item.final_score,
+                }
+            )
         payload = {
             "skill_candidates": [s.__dict__ for s in routing.skill_candidates],
             "fused_ranking": [f.__dict__ for f in routing.fused_ranking],
             "suggested_skills": routing.suggested_skills,
             "decision_hints": routing_decision_hints(routing),
+            "expert_profiles": expert_profiles,
             "prompt_block": routing.prompt_block,
         }
         return json.dumps(payload, ensure_ascii=False)
@@ -68,7 +108,16 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
         agents = ctx.agent_registry.list_by_assistant(ctx.assistant_id)
         return json.dumps(
             [
-                {"agent_id": a.agent_id, "name": a.name, "skills": a.skills}
+                {
+                    "agent_id": a.agent_id,
+                    "name": a.name,
+                    "domain": a.domain,
+                    "description": a.description,
+                    "skills": a.skills,
+                    "toolsets": a.toolsets,
+                    "mcp_servers": a.mcp_servers,
+                    "has_mcp": bool(a.mcp_servers),
+                }
                 for a in agents
                 if not is_internal_agent(a.agent_id) and not a.stats.get("internal")
             ],
@@ -82,13 +131,13 @@ def handle_orchestrator_tool(name: str, arguments: dict[str, Any], ctx: Orchestr
         domain = str(arguments.get("domain") or "general")
         name = str(arguments.get("name") or agent_id)
         description = str(arguments.get("description") or "")
-        skills, toolsets = _routing_defaults(
+        skills, toolsets, mcp_servers = _routing_defaults(
             ctx,
             skills=list(arguments.get("skills") or []),
             domain=domain,
             toolsets=list(arguments.get("toolsets") or []),
+            mcp_servers=list(arguments.get("mcp_servers") or []),
         )
-        mcp_servers = list(arguments.get("mcp_servers") or [])
         system_prompt = str(
             arguments.get("system_prompt_template")
             or arguments.get("system_prompt")
@@ -268,6 +317,7 @@ ORCHESTRATOR_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "name": "create_subagent",
         "description": (
             "注册新的领域专家（仅当 list/search 无合适专家且任务需重复执行或专用 toolsets/MCP 时）。"
+            "domain=code 时须填 mcp_servers（如 opencode/devtools，可从 config.yaml 读取）；"
             "一次性问答或解释请勿创建。"
         ),
         "parameters": {

@@ -155,4 +155,13 @@ def routing_decision_hints(ctx: RoutingContext, *, score_threshold: float = 0.35
         hints.append("no_registered_expert: create_subagent only if execution-heavy and repeatable")
     if ctx.suggested_skills:
         hints.append(f"orchestrator_skills: {', '.join(ctx.suggested_skills[:5])}")
+    code_experts = [
+        item.agent_id
+        for item in ctx.fused_ranking
+        if "opencode" in item.agent_id.lower() or "code" in item.agent_id.lower()
+    ]
+    if code_experts:
+        hints.append(
+            f"code_task_hint: prefer MCP-bound expert (e.g. {code_experts[0]}) over bare terminal agents"
+        )
     return hints

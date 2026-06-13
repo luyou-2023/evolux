@@ -148,6 +148,21 @@ def maybe_promote_expert(
     skills = list(routing.suggested_skills[:5] or entry.get("skills") or [])
     domain = infer_domain(user_message, skills)
     agent_id = f"expert-{signature.replace(' ', '-')[:24]}" or "expert-general"
+    config_mcp = {}
+    try:
+        import yaml
+
+        cfg_path = home / "config.yaml"
+        if cfg_path.exists():
+            raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            mcp = raw.get("mcp_servers")
+            if isinstance(mcp, dict):
+                config_mcp = mcp
+    except OSError:
+        pass
+    from agent.sedimentation import default_mcp_servers_for_domain
+
+    mcp_servers = default_mcp_servers_for_domain(domain, config_mcp) if domain == "code" else []
 
     if not settings.auto_create:
         return format_promotion_prompt(
@@ -165,7 +180,7 @@ def maybe_promote_expert(
         description=description,
         skills=skills,
         toolsets=toolsets,
-        mcp_servers=[],
+        mcp_servers=mcp_servers,
     )
     agent = AgentDefinition(
         agent_id=agent_id,
@@ -176,6 +191,7 @@ def maybe_promote_expert(
         system_prompt_template=system_prompt,
         skills=skills,
         toolsets=toolsets,
+        mcp_servers=mcp_servers,
         stats={"auto_promoted": True, "task_signature": signature},
     )
     agent_registry.register(agent)

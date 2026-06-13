@@ -17,9 +17,62 @@ DOMAIN_TOOLSETS: dict[str, list[str]] = {
     "general": ["evolux-code"],
 }
 
+# MCP server name substrings that indicate code/opencode capability in config.yaml
+CODE_MCP_NAME_HINTS = ("opencode", "devtools", "code", "cdp")
+
 
 def default_toolsets_for_domain(domain: str) -> list[str]:
     return list(DOMAIN_TOOLSETS.get((domain or "general").lower(), ["evolux-code"]))
+
+
+def default_mcp_servers_for_domain(
+    domain: str,
+    mcp_servers: dict[str, Any] | None = None,
+) -> list[str]:
+    """Pick enabled MCP servers from config for a domain (code → opencode/devtools-like names)."""
+    if (domain or "").lower() != "code" or not mcp_servers:
+        return []
+    selected: list[str] = []
+    for name, cfg in mcp_servers.items():
+        if not isinstance(cfg, dict) or cfg.get("enabled") is False:
+            continue
+        name_lower = str(name).lower()
+        if any(hint in name_lower for hint in CODE_MCP_NAME_HINTS):
+            selected.append(str(name))
+    return selected
+
+
+def _code_execution_instructions(mcp_servers: list[str]) -> str:
+    if not mcp_servers:
+        return (
+            "代码任务：若 config 中无 MCP，可用 terminal/write_file；"
+            "摘要须如实列出实际工具名，勿声称使用了 opencode/MCP。"
+        )
+    mcp_line = ", ".join(mcp_servers)
+    return (
+        f"代码任务必须通过 MCP 工具执行（绑定服务: {mcp_line}，工具名前缀 mcp_{{server}}_*）。\n"
+        "禁止用 write_file/terminal 绕过 MCP 写代码，除非 MCP 调用失败且已在摘要中说明。\n"
+        "摘要须列出实际调用的 MCP 工具名；未调用 MCP 时不得声称使用了 opencode。"
+    )
+
+
+def build_dispatch_context_slice(
+    *,
+    toolsets: list[str],
+    mcp_servers: list[str],
+    domain: str,
+    context_slice: str = "",
+) -> str:
+    """Inject capability constraints so sub-agents do not bypass bound MCP."""
+    parts: list[str] = []
+    if context_slice.strip():
+        parts.append(context_slice.strip())
+    cap = f"绑定 toolsets: {', '.join(toolsets) or 'evolux-code'}"
+    cap += f"\n绑定 MCP: {', '.join(mcp_servers) if mcp_servers else '无'}"
+    if (domain or "").lower() == "code":
+        cap += f"\n\n{_code_execution_instructions(mcp_servers)}"
+    parts.append(cap)
+    return "\n\n".join(parts)
 
 
 def build_default_system_prompt(
@@ -34,13 +87,17 @@ def build_default_system_prompt(
     skill_line = ", ".join(skills) if skills else "（由路由动态绑定）"
     toolset_line = ", ".join(toolsets) if toolsets else "evolux-code"
     mcp_line = ", ".join(mcp_servers) if mcp_servers else "无"
+    extra = ""
+    if (domain or "").lower() == "code":
+        extra = f"\n\n{_code_execution_instructions(mcp_servers)}"
     return (
         f"你是 {name}，{domain} 领域专家。\n"
         f"{description.strip() or '专注执行主控委派的具体任务。'}\n\n"
-        "职责：使用绑定 skills 与工具完成委派任务，返回结构化摘要（结论、关键步骤、产出路径）。\n"
+        "职责：使用绑定 skills 与工具完成委派任务，返回结构化摘要（结论、关键步骤、产出路径、实际使用的工具名）。\n"
         f"绑定 skills: {skill_line}\n"
         f"绑定 toolsets: {toolset_line}\n"
         f"绑定 MCP: {mcp_line}"
+        f"{extra}"
     )
 
 

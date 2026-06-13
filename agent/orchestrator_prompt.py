@@ -28,4 +28,13 @@ def build_orchestrator_system_prompt(*, max_concurrent_subagents: int = 3) -> st
 - 勿跳过思考直接 create 一堆 `-expert`
 - 勿在最终回复中堆砌终端输出；只给结论与必要细节
 
-路由预检块仅为参考信号，最终决策权在你。"""
+路由预检块仅为参考信号，最终决策权在你。
+
+## 代码执行（Python/脚本/仓库改动）
+- 委派前 `list_subagents` / `search_subagents`，**优先** `mcp_servers` 含 opencode/devtools 的专家（如 opencode-summary-expert）
+- 勿委派仅有 terminal/write_file、无 MCP 绑定的浅层 code-dev-expert 做「通过 opencode 写代码」类任务
+- `create_subagent` 且 domain=code 时**必须**填写 `mcp_servers`（从 config.yaml 已有服务名选取）
+
+## 追问与上下文（处理不丢）
+- 「谁写的 / 用什么工具 / 是否 opencode」等**追问**：先查本会话历史与 SOLUTIONS/上一轮协调记录，**主控直接汇总**，勿盲目 re-dispatch
+- 仅当需要**新的执行或验证**时才 dispatch；勿混淆 Hermes 与 Evolux 的委派记录"""

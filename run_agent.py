@@ -19,7 +19,7 @@ from agent.orchestrator_prompt import build_orchestrator_system_prompt
 from agent.planning_state import TurnPlanningState
 from agent.session_plan import load_session_plan, save_session_plan
 from agent.routing import FusionWeights, RoutingContext, SubAgentCandidate, fuse_routing
-from agent.sedimentation import sediment_agent_task, sediment_turn_solution
+from agent.sedimentation import build_dispatch_context_slice, sediment_agent_task, sediment_turn_solution
 from agent.settings import Settings, load_settings
 from agent.session_monitor import (
     SESSION_MONITOR_AGENT_ID,
@@ -496,7 +496,13 @@ class EvoluxAgent:
                 )
             )
         subagent_hook = CombinedToolHook(*subagent_hooks) if subagent_hooks else None
-        result = subagent.run_task(task, context_slice=context_slice, tool_hook=subagent_hook)
+        dispatch_context = build_dispatch_context_slice(
+            toolsets=list(agent_def.toolsets or ["evolux-code"]),
+            mcp_servers=list(agent_def.mcp_servers or []),
+            domain=agent_def.domain,
+            context_slice=context_slice,
+        )
+        result = subagent.run_task(task, context_slice=dispatch_context, tool_hook=subagent_hook)
         _touch_agent_usage(self.agent_registry, agent_def)
         self.subagent_index.sync_agent(self.agent_registry.get(agent_id))
         if self.settings.sedimentation.enabled and result.content:

@@ -25,6 +25,10 @@ def test_orchestrator_turn_injects_planning_prompt(evolux_home):
 
 
 def test_create_subagent_applies_routing_defaults(evolux_home):
+    (evolux_home / "config.yaml").write_text(
+        "mcp_servers:\n  opencode:\n    command: npx\n  cdp-mcp:\n    command: node\n",
+        encoding="utf-8",
+    )
     registry = AgentRegistry(home=evolux_home)
     planning = TurnPlanningState()
     planning.routing = fuse_routing(
@@ -40,6 +44,7 @@ def test_create_subagent_applies_routing_defaults(evolux_home):
         create_subagent_runner=lambda **_: {},
         dispatch_subagent=lambda **_: {"content": "ok"},
         turn_planning=planning,
+        home=evolux_home,
     )
     out = json.loads(
         handle_orchestrator_tool(
@@ -56,6 +61,7 @@ def test_create_subagent_applies_routing_defaults(evolux_home):
     assert out["created"] == "code-expert"
     assert out["skills"] == ["git"]
     assert out["toolsets"] == ["evolux-code"]
+    assert out["mcp_servers"] == ["opencode", "cdp-mcp"]
     agent = registry.get("code-expert")
     assert agent.system_prompt_template
     assert "Code Expert" in agent.system_prompt_template

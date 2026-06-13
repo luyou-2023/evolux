@@ -20,7 +20,7 @@ def add_assistant_parser(sub: argparse._SubParsersAction) -> None:
     bind.add_argument("--id", default="default", help="Assistant id")
     bind.add_argument("--app-id", default="", help="Feishu app id")
     bind.add_argument("--app-secret", default="", help="Feishu app secret")
-    bind.add_argument("--mode", default="webhook", choices=["webhook", "websocket"])
+    bind.add_argument("--mode", default="websocket", choices=["webhook", "websocket"])
 
 
 def run_assistant(args: argparse.Namespace, home: Path | None = None) -> int:

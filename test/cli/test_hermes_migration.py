@@ -83,6 +83,29 @@ def test_migrate_from_hermes_full_imports_env(evolux_home, tmp_path):
     assert "DEEPSEEK_API_KEY=secret" in (evolux_home / ".env").read_text(encoding="utf-8")
 
 
+def test_migrate_upgrades_feishu_assistants_to_websocket(evolux_home, tmp_path):
+    hermes = tmp_path / "hermes"
+    _write_hermes_home(hermes)
+    hermes_cfg = yaml.safe_load((hermes / "config.yaml").read_text(encoding="utf-8"))
+    hermes_cfg["assistants"] = {
+        "cdp-automation": {
+            "name": "CDP自动化",
+            "platforms": {
+                "feishu": {
+                    "app_id": "cli_test",
+                    "app_secret": "secret",
+                    "mode": "webhook",
+                }
+            },
+        }
+    }
+    (hermes / "config.yaml").write_text(yaml.safe_dump(hermes_cfg), encoding="utf-8")
+
+    migrate_from_hermes(hermes, evolux_home, dry_run=False)
+    cfg = yaml.safe_load((evolux_home / "config.yaml").read_text(encoding="utf-8"))
+    assert cfg["assistants"]["cdp-automation"]["platforms"]["feishu"]["mode"] == "websocket"
+
+
 def test_migrate_dry_run(evolux_home, tmp_path):
     hermes = tmp_path / "hermes"
     _write_hermes_home(hermes)

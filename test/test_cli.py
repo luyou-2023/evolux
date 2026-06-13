@@ -40,6 +40,7 @@ def test_cli_assistant_bind_feishu(evolux_home):
     registry = AssistantRegistry(home=evolux_home)
     cfg = registry.get("work-bot")
     assert cfg.platforms["feishu"]["app_id"] == "cli_app"
+    assert cfg.platforms["feishu"]["mode"] == "websocket"
 
 
 def test_cli_gateway_run_requires_feishu(evolux_home):
@@ -49,7 +50,19 @@ def test_cli_gateway_run_requires_feishu(evolux_home):
 
 def test_cli_gateway_run_check(evolux_home):
     run_setup(home=evolux_home)
-    main(["assistant", "bind", "feishu", "--id", "work-bot", "--app-id", "app1"])
+    main(
+        [
+            "assistant",
+            "bind",
+            "feishu",
+            "--id",
+            "work-bot",
+            "--app-id",
+            "app1",
+            "--mode",
+            "webhook",
+        ]
+    )
     assert main(["gateway", "run", "--check"]) == 0
 
 

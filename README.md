@@ -152,20 +152,35 @@ evolux -p personal setup
 
 ## Feishu integration
 
-1. Bind assistant: `evolux assistant bind feishu <assistant_id> …`
-2. Point Feishu event subscription to:
+**Recommended (no public URL): WebSocket long connection** — Hermes-aligned default.
 
-```
-http://<your-host>:8787/webhook/feishu/<assistant_id>
+1. Bind assistant:
+
+```bash
+evolux assistant bind feishu --id work-bot --app-id <id> --app-secret <secret> --mode websocket
 ```
 
-3. Install and start the gateway (Hermes-style):
+2. In Feishu Open Platform → **Events → Long Connection (WebSocket)**, subscribe to `im.message.receive_v1`.
+
+3. Install and start the gateway:
 
 ```bash
 evolux gateway install    # systemd on Linux, launchd on macOS
 evolux gateway start      # background service (includes cron ticker)
 # or for local debugging:
 evolux gateway run        # foreground
+```
+
+**Optional: Webhook mode** (requires a reachable HTTP endpoint):
+
+```bash
+evolux assistant bind feishu ... --mode webhook
+```
+
+Point Feishu event subscription to:
+
+```
+http://<your-host>:8787/webhook/feishu/<assistant_id>
 ```
 
 Replies, coordination progress, clarify cards, and slash commands work inside Feishu.

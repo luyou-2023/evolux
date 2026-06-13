@@ -66,9 +66,32 @@ def test_validate_gateway_ready_ok(evolux_home):
             "app1",
             "--app-secret",
             "secret",
+            "--mode",
+            "webhook",
         ]
     )
     assert validate_gateway_ready(evolux_home) == 0
+
+
+def test_validate_gateway_ready_websocket_requires_deps(evolux_home, monkeypatch):
+    run_setup(home=evolux_home)
+    main(
+        [
+            "assistant",
+            "bind",
+            "feishu",
+            "--id",
+            "work-bot",
+            "--app-id",
+            "app1",
+            "--app-secret",
+            "secret",
+            "--mode",
+            "websocket",
+        ]
+    )
+    monkeypatch.setattr("gateway.platforms.feishu_ws.FEISHU_WS_AVAILABLE", False)
+    assert validate_gateway_ready(evolux_home) == 1
 
 
 def test_cli_gateway_run_requires_feishu(evolux_home):
@@ -78,13 +101,37 @@ def test_cli_gateway_run_requires_feishu(evolux_home):
 
 def test_cli_gateway_run_check(evolux_home):
     run_setup(home=evolux_home)
-    main(["assistant", "bind", "feishu", "--id", "work-bot", "--app-id", "app1"])
+    main(
+        [
+            "assistant",
+            "bind",
+            "feishu",
+            "--id",
+            "work-bot",
+            "--app-id",
+            "app1",
+            "--mode",
+            "webhook",
+        ]
+    )
     assert main(["gateway", "run", "--check"]) == 0
 
 
 def test_install_gateway_service_writes_unit(evolux_home, monkeypatch, tmp_path):
     run_setup(home=evolux_home)
-    main(["assistant", "bind", "feishu", "--id", "work-bot", "--app-id", "app1"])
+    main(
+        [
+            "assistant",
+            "bind",
+            "feishu",
+            "--id",
+            "work-bot",
+            "--app-id",
+            "app1",
+            "--mode",
+            "webhook",
+        ]
+    )
     monkeypatch.setattr("cli.gateway_service.platform_kind", lambda: "systemd")
     unit_path = tmp_path / "evolux-gateway.service"
     monkeypatch.setattr("cli.gateway_service.systemd_unit_path", lambda profile="": unit_path)

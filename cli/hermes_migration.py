@@ -228,6 +228,28 @@ def _map_hermes_llm(hermes_cfg: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _upgrade_feishu_assistants_to_websocket(cfg: dict[str, Any]) -> list[str]:
+    """Hermes defaults to websocket; Evolux matches that for no-public-IP setups."""
+    upgraded: list[str] = []
+    assistants = cfg.get("assistants")
+    if not isinstance(assistants, dict):
+        return upgraded
+    for assistant_id, assistant_cfg in assistants.items():
+        if not isinstance(assistant_cfg, dict):
+            continue
+        platforms = assistant_cfg.get("platforms")
+        if not isinstance(platforms, dict):
+            continue
+        feishu = platforms.get("feishu")
+        if not isinstance(feishu, dict):
+            continue
+        mode = str(feishu.get("mode") or "webhook").lower()
+        if mode != "websocket":
+            feishu["mode"] = "websocket"
+            upgraded.append(str(assistant_id))
+    return upgraded
+
+
 def _merge_config(source: Path, target: Path, *, dry_run: bool) -> list[str]:
     src_cfg = _read_yaml(source / "config.yaml")
     if not src_cfg:
@@ -280,6 +302,12 @@ def _merge_config(source: Path, target: Path, *, dry_run: bool) -> list[str]:
                 if assistant_id not in dst_assistants and isinstance(cfg, dict):
                     dst_assistants[assistant_id] = cfg
             merged_keys.append("assistants")
+
+    upgraded = _upgrade_feishu_assistants_to_websocket(dst_cfg)
+    if upgraded:
+        merged_keys.append("feishu.websocket")
+        if not dry_run:
+            pass  # dst_cfg already mutated in place
 
     if merged_keys and not dry_run:
         _write_yaml(dst_path, dst_cfg)

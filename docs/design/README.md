@@ -42,6 +42,7 @@
 | Cron Hermes 对齐（jobs.json、cronjob 工具、/cron、gateway tick） | ✅ 完成 |
 | 安装/卸载 + Hermes 用户沉淀迁移（curl install、migrate from-hermes） | ✅ 完成 |
 | Gateway 服务 install/start/stop（systemd / launchd） | ✅ 完成 |
+| 飞书 WebSocket 长连接（无公网，Hermes 对齐） | ✅ 完成 |
 | Phase 6 Feishu 工具 / ACP 进度流 | ✅ 完成 |
 | Phase 7 SQLite 向量 / LLM 流式 / CI | ✅ 完成 |
 | Phase 8 LLM tools 接线 / Sub-agent MCP 子集 | ✅ 完成 |

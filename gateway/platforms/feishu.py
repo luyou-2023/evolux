@@ -18,7 +18,15 @@ class FeishuConfig:
     app_id: str = ""
     app_secret: str = ""
     verification_token: str = ""
-    mode: str = "webhook"
+    mode: str = "websocket"
+
+
+def feishu_connection_mode(platform_config: dict[str, Any]) -> str:
+    """Return feishu transport mode (websocket default, Hermes-aligned)."""
+    mode = str(platform_config.get("mode") or "websocket").lower()
+    if mode not in {"websocket", "webhook"}:
+        return "websocket"
+    return mode
 
 
 def parse_feishu_webhook(payload: dict[str, Any], *, assistant_id: str) -> MessageEvent | dict[str, Any] | None:
@@ -160,3 +168,66 @@ def _normalize_chat_type(raw: Any) -> str:
     if value in {"group", "topic_group"}:
         return "group"
     return value
+
+
+def parse_feishu_im_receive_sdk(data: Any, *, assistant_id: str) -> MessageEvent | None:
+    """Convert lark-oapi P2ImMessageReceiveV1 into MessageEvent."""
+    event = getattr(data, "event", None)
+    if not event:
+        return None
+    message = getattr(event, "message", None)
+    sender = getattr(event, "sender", None)
+    if not message or not sender:
+        return None
+
+    sender_id = getattr(sender, "sender_id", None)
+    open_id = str(getattr(sender_id, "open_id", "") or "") if sender_id else ""
+    user_id = str(getattr(sender_id, "user_id", "") or "") if sender_id else ""
+    union_id = str(getattr(sender_id, "union_id", "") or "") if sender_id else ""
+
+    source = SessionSource(
+        platform="feishu",
+        chat_type=_normalize_chat_type(getattr(message, "chat_type", "p2p")),
+        chat_id=str(getattr(message, "chat_id", "") or ""),
+        user_id=open_id or user_id,
+        user_id_alt=union_id or None,
+        thread_id=str(getattr(message, "thread_id", "") or "") or None,
+    )
+    return MessageEvent(
+        assistant_id=assistant_id,
+        source=source,
+        text=_extract_text(getattr(message, "content", "")),
+        message_id=str(getattr(message, "message_id", "") or "") or None,
+        raw={"transport": "websocket"},
+    )
+
+
+def parse_feishu_card_action_sdk(data: Any, *, assistant_id: str) -> MessageEvent:
+    """Convert lark-oapi P2CardActionTrigger into MessageEvent."""
+    event = getattr(data, "event", None) or {}
+    action = getattr(event, "action", None)
+    operator = getattr(event, "operator", None)
+    context = getattr(event, "context", None)
+    value = getattr(action, "value", None) if action else None
+    if not isinstance(value, dict):
+        value = {"option": str(value or "")}
+
+    payload = {
+        "header": {"event_type": "card.action.trigger"},
+        "event": {
+            "operator": {
+                "open_id": str(getattr(operator, "open_id", "") or "") if operator else "",
+                "union_id": str(getattr(operator, "union_id", "") or "") if operator else "",
+            },
+            "action": {
+                "tag": str(getattr(action, "tag", "") or "") if action else "",
+                "value": value,
+            },
+            "context": {
+                "open_chat_id": str(getattr(context, "open_chat_id", "") or "") if context else "",
+                "open_message_id": str(getattr(context, "open_message_id", "") or "") if context else "",
+                "chat_type": str(getattr(context, "chat_type", "") or "p2p") if context else "p2p",
+            },
+        },
+    }
+    return _parse_card_action_trigger(payload, payload["event"], assistant_id=assistant_id)

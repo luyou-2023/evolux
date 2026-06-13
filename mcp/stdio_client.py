@@ -8,13 +8,35 @@ import os
 import queue
 import subprocess
 import threading
-from typing import Any
+from pathlib import Path
+from typing import Any, IO
 
+from evolux_constants import get_evolux_home
 from mcp.sampling import MCPSamplingError, MCPSamplingHandler
 
 logger = logging.getLogger("evolux.mcp.stdio")
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
+
+_stderr_log_handle: IO[str] | None = None
+_stderr_log_lock = threading.Lock()
+
+
+def _get_mcp_stderr_sink(home: Path | None = None) -> IO[str]:
+    """Redirect MCP subprocess stderr to a log file (avoids PIPE deadlock)."""
+    global _stderr_log_handle
+    with _stderr_log_lock:
+        if _stderr_log_handle is not None:
+            return _stderr_log_handle
+        base = home or get_evolux_home()
+        try:
+            log_dir = base / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            _stderr_log_handle = open(log_dir / "mcp-stderr.log", "a", encoding="utf-8")
+        except OSError as exc:
+            logger.debug("Failed to open MCP stderr log, using devnull: %s", exc)
+            _stderr_log_handle = open(os.devnull, "w", encoding="utf-8")
+        return _stderr_log_handle
 
 
 class MCPStdioError(RuntimeError):
@@ -31,15 +53,19 @@ class MCPStdioClient:
         *,
         env: dict[str, str] | None = None,
         cwd: str | None = None,
+        home: Path | None = None,
         sampling_handler: MCPSamplingHandler | None = None,
         timeout: float = 120.0,
+        connect_timeout: float = 60.0,
     ):
         self.command = command
         self.args = list(args or [])
         self.env = env
         self.cwd = cwd
+        self.home = home
         self.sampling_handler = sampling_handler
         self.timeout = timeout
+        self.connect_timeout = connect_timeout
         self._proc: subprocess.Popen[bytes] | None = None
         self._io_lock = threading.Lock()
         self._pending_lock = threading.Lock()
@@ -53,15 +79,16 @@ class MCPStdioClient:
         if self._proc and self._proc.poll() is None:
             return
 
-        env = os.environ.copy()
-        if self.env:
-            env.update(self.env)
+        env = dict(self.env) if self.env is not None else os.environ.copy()
+        stderr_sink = _get_mcp_stderr_sink(self.home)
+        stderr_sink.write(f"\n--- MCP subprocess: {self.command} {' '.join(self.args)} ---\n")
+        stderr_sink.flush()
 
         self._proc = subprocess.Popen(
             [self.command, *self.args],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=stderr_sink,
             env=env,
             cwd=self.cwd,
         )
@@ -142,7 +169,7 @@ class MCPStdioClient:
         }
         self._write_message(payload)
         try:
-            response = response_queue.get(timeout=self.timeout)
+            response = response_queue.get(timeout=self.connect_timeout if method == "initialize" else self.timeout)
         except queue.Empty as exc:
             raise MCPStdioError(f"timeout waiting for {method}") from exc
         finally:
@@ -226,10 +253,8 @@ class MCPStdioClient:
         while True:
             line = proc.stdout.readline()
             if not line:
-                stderr = ""
-                if proc.stderr:
-                    stderr = proc.stderr.read().decode("utf-8", errors="replace")
-                raise MCPStdioError(f"MCP server closed connection. stderr={stderr[:500]}")
+                stderr_tail = _read_stderr_log_tail(self.home)
+                raise MCPStdioError(f"MCP server closed connection. stderr={stderr_tail}")
             if line in {b"\r\n", b"\n"}:
                 break
             key, value = line.decode("ascii", errors="replace").split(":", 1)
@@ -243,3 +268,13 @@ class MCPStdioClient:
         if not isinstance(parsed, dict):
             raise MCPStdioError("invalid MCP JSON response")
         return parsed
+
+
+def _read_stderr_log_tail(home: Path | None = None, *, max_chars: int = 500) -> str:
+    base = home or get_evolux_home()
+    path = base / "logs" / "mcp-stderr.log"
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    return text[-max_chars:]

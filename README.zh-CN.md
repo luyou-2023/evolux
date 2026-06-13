@@ -161,20 +161,35 @@ evolux -p personal setup
 
 ## 飞书接入
 
-1. 配置助手：`evolux assistant bind feishu <assistant_id> …`
-2. 在飞书开放平台将事件订阅指向：
+**推荐（无需公网）：WebSocket 长连接** — 与 Hermes 默认方式一致。
 
-```
-http://<你的主机>:8787/webhook/feishu/<assistant_id>
+1. 绑定助手：
+
+```bash
+evolux assistant bind feishu --id work-bot --app-id <id> --app-secret <secret> --mode websocket
 ```
 
-3. 安装并启动 Gateway（Hermes 风格）：
+2. 在飞书开放平台 → **事件订阅 → 长连接（WebSocket）**，订阅 `im.message.receive_v1`。
+
+3. 安装并启动 Gateway：
 
 ```bash
 evolux gateway install    # systemd (Linux) / launchd (macOS)
 evolux gateway start      # 启动后台服务（含 cron ticker）
 # 或开发调试：
 evolux gateway run        # 前台运行
+```
+
+**可选：Webhook 模式**（需要可达的 HTTP 地址）：
+
+```bash
+evolux assistant bind feishu ... --mode webhook
+```
+
+将事件订阅指向：
+
+```
+http://<你的主机>:8787/webhook/feishu/<assistant_id>
 ```
 
 主控回复会自动回传飞书；协调进度、clarify 卡片、slash 命令在飞书内可用。

@@ -12,6 +12,12 @@ from evolux_constants import get_evolux_home
 from mcp.http_client import MCPHTTPClient, MCPHTTPError
 from mcp.sampling import MCPSamplingConfig, MCPSamplingHandler
 from mcp.stdio_client import MCPStdioClient, MCPStdioError
+from mcp.subprocess_env import (
+    build_stdio_env,
+    resolve_stdio_connect_timeout,
+    resolve_stdio_cwd,
+    resolve_stdio_timeout,
+)
 
 logger = logging.getLogger("evolux.mcp")
 
@@ -23,6 +29,9 @@ class MCPServerConfig:
     args: list[str] = field(default_factory=list)
     url: str | None = None
     enabled: bool = True
+    env: dict[str, str] = field(default_factory=dict)
+    cwd: str | None = None
+    timeout: float = 120.0
 
 
 class MCPManager:
@@ -64,6 +73,13 @@ class MCPManager:
                     args=list(raw.get("args") or []),
                     url=raw.get("url"),
                     enabled=bool(raw.get("enabled", True)),
+                    env={
+                        str(k): str(v)
+                        for k, v in (raw.get("env") or {}).items()
+                        if isinstance(raw.get("env"), dict)
+                    },
+                    cwd=str(raw["cwd"]) if raw.get("cwd") not in (None, "") else None,
+                    timeout=resolve_stdio_timeout(raw),
                 )
             )
         return servers
@@ -91,7 +107,7 @@ class MCPManager:
         if command:
             tools = self._discover_with_client(
                 server_name,
-                self._get_or_create_stdio_client(server_name, str(command), list(config.get("args") or [])),
+                self._get_or_create_stdio_client(server_name, config),
             )
         elif config.get("url"):
             tools = self._discover_with_client(
@@ -152,24 +168,27 @@ class MCPManager:
         if not config:
             return None
         if config.get("command"):
-            return self._get_or_create_stdio_client(
-                server_name,
-                str(config["command"]),
-                list(config.get("args") or []),
-            )
+            return self._get_or_create_stdio_client(server_name, config)
         if config.get("url"):
             return self._get_or_create_http_client(server_name, str(config["url"]))
         return None
 
-    def _get_or_create_stdio_client(self, server_name: str, command: str, args: list[str]) -> MCPStdioClient:
+    def _get_or_create_stdio_client(self, server_name: str, config: dict[str, Any]) -> MCPStdioClient:
         if server_name not in self._clients:
+            command = str(config.get("command") or "")
+            args = list(config.get("args") or [])
             handler = self._sampling_handler_for(server_name)
             if handler:
                 self._sampling_handlers[server_name] = handler
             self._clients[server_name] = MCPStdioClient(
                 command,
                 args,
+                env=build_stdio_env(config.get("env"), evolux_home=self.home),
+                cwd=resolve_stdio_cwd(config, command, args),
+                home=self.home,
                 sampling_handler=handler,
+                timeout=resolve_stdio_timeout(config),
+                connect_timeout=resolve_stdio_connect_timeout(config),
             )
         return self._clients[server_name]
 

@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from gateway.dashboard import register_dashboard_routes
 from gateway.platforms.feishu import build_card_action_ack, parse_feishu_webhook, verify_feishu_signature
@@ -120,11 +120,18 @@ async def run_webhook_server(
     home: Path,
     *,
     get_secret: Callable[[str], str] | None = None,
+    registry: Any | None = None,
 ) -> None:
+    from gateway.assistant_registry import AssistantRegistry
+    from gateway.platforms.feishu_ws import FeishuWebSocketManager
+
+    assistant_registry = registry or AssistantRegistry(home=home)
     app = create_gateway_app(runner, home, get_secret=get_secret)
     runner_ref = runner
+    ws_manager = FeishuWebSocketManager(runner)
 
     async def _cleanup(_app: web.Application) -> None:
+        await ws_manager.stop()
         runner_ref.shutdown()
 
     app.on_cleanup.append(_cleanup)
@@ -134,6 +141,8 @@ async def run_webhook_server(
     await site.start()
     logger.info("Evolux gateway listening on http://%s:%s", host, port)
 
+    await ws_manager.start_for_registry(assistant_registry)
+
     cron_task: asyncio.Task | None = asyncio.create_task(_run_cron_ticker(home))
     app["_cron_task"] = cron_task
     try:
@@ -142,6 +151,7 @@ async def run_webhook_server(
     finally:
         if cron_task is not None:
             cron_task.cancel()
+        await ws_manager.stop()
         await web_runner.cleanup()
 
 

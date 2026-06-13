@@ -19,6 +19,7 @@ from cli.gateway_service import (
 )
 from evolux_logging import setup_logging
 from gateway.assistant_registry import AssistantRegistry
+from gateway.platforms.feishu import feishu_connection_mode
 from gateway.run import GatewayRunner
 from gateway.webhook_server import run_webhook_server
 
@@ -73,8 +74,12 @@ def run_gateway_foreground(home: Path | None = None, *, check_only: bool = False
     print(f"Cron ticker: every {settings.cron.tick_seconds}s")
     for item in feishu_assistants:
         cfg = item.platforms["feishu"]
-        webhook = f"http://{host}:{port}/webhook/feishu/{item.assistant_id}"
-        print(f"- {item.assistant_id}: {webhook} (mode={cfg.get('mode', 'webhook')})")
+        mode = feishu_connection_mode(cfg)
+        if mode == "websocket":
+            print(f"- {item.assistant_id}: WebSocket long connection (no public URL required)")
+        else:
+            webhook = f"http://{host}:{port}/webhook/feishu/{item.assistant_id}"
+            print(f"- {item.assistant_id}: {webhook} (mode=webhook)")
 
     async def _main() -> None:
         await run_webhook_server(

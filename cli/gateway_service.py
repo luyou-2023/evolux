@@ -129,6 +129,8 @@ def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def validate_gateway_ready(home: Path) -> int:
+    from gateway.platforms.feishu import feishu_connection_mode
+    from gateway.platforms.feishu_ws import FEISHU_WS_AVAILABLE
     from gateway.webhook_server import AIOHTTP_AVAILABLE
     from gateway.assistant_registry import AssistantRegistry
 
@@ -139,7 +141,18 @@ def validate_gateway_ready(home: Path) -> int:
     feishu_assistants = [item for item in registry.list() if "feishu" in item.platforms]
     if not feishu_assistants:
         print("No Feishu assistants configured.")
-        print("Run: evolux assistant bind feishu --id work-bot --app-id <id> --app-secret <secret>")
+        print(
+            "Run: evolux assistant bind feishu --id work-bot "
+            "--app-id <id> --app-secret <secret> --mode websocket"
+        )
+        return 1
+
+    needs_websocket = any(
+        feishu_connection_mode(item.platforms["feishu"]) == "websocket" for item in feishu_assistants
+    )
+    if needs_websocket and not FEISHU_WS_AVAILABLE:
+        print("Feishu WebSocket mode requires lark-oapi and websockets.")
+        print("Install: pip install evolux[gateway]")
         return 1
     return 0
 

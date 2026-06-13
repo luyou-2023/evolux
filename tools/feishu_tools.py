@@ -94,6 +94,86 @@ def check_feishu_requirements() -> bool:
     return True
 
 
+def check_feishu_setup_available() -> bool:
+    import sys
+
+    from cli.feishu_setup import feishu_register_app_available
+
+    return feishu_register_app_available() and sys.stdin.isatty()
+
+
+def feishu_setup(
+    *,
+    assistant_id: str = "default",
+    mode: str = "auto",
+    app_name: str = "",
+) -> str:
+    """Run Feishu scan/URL wizard and bind credentials to an assistant."""
+    from cli.feishu_setup import feishu_register_app_available, run_feishu_app_wizard
+    from evolux_constants import get_evolux_home
+
+    if not feishu_register_app_available():
+        return tool_error("Feishu setup requires: pip install 'evolux[gateway]' (lark-oapi>=1.5.5)")
+    import sys
+
+    if not sys.stdin.isatty():
+        return tool_error("Feishu scan setup must run in interactive CLI; use /feishu setup")
+
+    registry = AssistantRegistry(home=get_evolux_home())
+    registry.ensure_assistant(assistant_id)
+    try:
+        result = run_feishu_app_wizard(
+            registry,
+            assistant_id=assistant_id,
+            app_name=app_name or None,
+            mode=mode,
+            open_browser=True,
+        )
+    except KeyboardInterrupt:
+        return tool_error("Feishu setup cancelled")
+    except Exception as exc:
+        return tool_error(f"Feishu setup failed: {exc}")
+
+    return json.dumps(
+        {
+            "success": True,
+            "assistant_id": result.assistant_id,
+            "app_id": result.app_id,
+            "mode": result.mode,
+            "message": "Feishu app created and bound. shared_hermes: keep Hermes gateway running.",
+        },
+        ensure_ascii=False,
+    )
+
+
+FEISHU_SETUP_SCHEMA = {
+    "name": "feishu_setup",
+    "description": (
+        "Create and bind a Feishu bot via scan/URL (official register_app). "
+        "Use when the user asks to integrate Feishu in CLI chat. "
+        "Opens a link/QR in the terminal; user confirms in Feishu app. "
+        "mode=auto picks shared_hermes when Hermes gateway runs."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "assistant_id": {
+                "type": "string",
+                "description": "Evolux assistant id to bind (default: current assistant)",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["auto", "shared_hermes", "websocket", "webhook"],
+                "description": "Feishu transport mode",
+            },
+            "app_name": {
+                "type": "string",
+                "description": "Preset Feishu app display name",
+            },
+        },
+    },
+}
+
 FEISHU_MESSAGE_SCHEMA = {
     "name": "feishu_message",
     "description": "Send a text message to a Feishu chat.",
@@ -186,4 +266,15 @@ registry.register(
     FEISHU_DOC_APPEND_SCHEMA,
     toolset="feishu",
     check_fn=check_feishu_requirements,
+)
+registry.register(
+    "feishu_setup",
+    lambda args, **kwargs: feishu_setup(
+        assistant_id=str(args.get("assistant_id") or kwargs.get("assistant_id") or "default"),
+        mode=str(args.get("mode") or "auto"),
+        app_name=str(args.get("app_name") or ""),
+    ),
+    FEISHU_SETUP_SCHEMA,
+    toolset="feishu",
+    check_fn=check_feishu_setup_available,
 )

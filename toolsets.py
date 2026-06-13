@@ -93,7 +93,7 @@ TOOLSETS: dict[str, dict[str, Any]] = {
     },
     "feishu": {
         "description": "Feishu messaging and document tools",
-        "tools": ["feishu_message", "feishu_doc_read", "feishu_doc_create", "feishu_doc_append"],
+        "tools": ["feishu_message", "feishu_doc_read", "feishu_doc_create", "feishu_doc_append", "feishu_setup"],
         "includes": [],
     },
     "evolux-feishu": {
@@ -124,6 +124,7 @@ TOOLSETS: dict[str, dict[str, Any]] = {
             "propose_mcp_server",
             "cronjob",
             "clarify",
+            "feishu_setup",
         ],
         "includes": [],
     },
@@ -135,7 +136,7 @@ TOOLSETS: dict[str, dict[str, Any]] = {
 }
 
 PLATFORM_TOOLSETS: dict[str, list[str]] = {
-    "cli": ["evolux-orchestrator", "evolux-code"],
+    "cli": ["evolux-orchestrator", "evolux-code", "feishu"],
     "feishu": ["evolux-orchestrator", "evolux-feishu"],
     "cron": ["evolux-orchestrator"],
     "acp": ["evolux-acp"],

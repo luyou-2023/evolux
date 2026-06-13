@@ -6,17 +6,15 @@ metadata:
 ---
 # Feishu Doc Skill
 
-Use `feishu_doc_read`, `feishu_doc_create`, and `feishu_message` tools when working with Feishu documents and chats.
+When the user asks to **integrate / bind / connect Feishu** in CLI chat:
 
-Bind credentials (scan / URL wizard):
+1. Call **`feishu_setup`** tool (mode=`shared_hermes` if Hermes gateway runs, else `auto`)
+2. Or tell them to run **`/feishu setup`** in `evolux chat` (opens scan/URL in terminal)
 
-```bash
-evolux feishu setup --assistant default
-# or: evolux assistant bind feishu --wizard --id default
-```
+After credentials exist, use `feishu_message`, `feishu_doc_read`, `feishu_doc_create`, `feishu_doc_append`.
 
-Manual bind:
+Manual CLI:
 
 ```bash
-evolux assistant bind feishu --id default --app-id YOUR_APP --app-secret YOUR_SECRET
+evolux feishu setup --assistant default --mode shared_hermes
 ```

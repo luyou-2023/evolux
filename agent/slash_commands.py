@@ -120,6 +120,7 @@ def _cmd_help(_ctx: SlashCommandContext, _args: str) -> SlashCommandOutcome:
         "/goal [add|done|clear] — 跨会话目标管理",
         "/mcp [list|approve|reject] — MCP 提案审批",
         "/cron [list|add|pause|resume|run|remove] — 定时任务（Hermes 兼容）",
+        "/feishu setup [assistant] [mode] — 扫码/链接创建飞书机器人（CLI）",
         "/retry — 重试上一条用户消息",
         "/undo — 撤销上一轮对话",
     ]
@@ -639,6 +640,59 @@ def _cmd_cron(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
     )
 
 
+def _cmd_feishu(ctx: SlashCommandContext, args: str) -> SlashCommandOutcome:
+    parts = args.split()
+    sub = parts[0].lower() if parts else ""
+    if sub != "setup":
+        return SlashCommandOutcome(
+            handled=True,
+            reply=(
+                f"{MONITOR_PREFIX} · 用法：/feishu setup [assistant_id] "
+                "[auto|shared_hermes|websocket]\n"
+                "终端会显示链接/二维码，飞书确认后自动写入 ~/.evolux/config.yaml。"
+            ),
+        )
+    if ctx.platform != "cli":
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 飞书扫码创建请在 CLI 运行：evolux chat，然后 /feishu setup",
+        )
+    from cli.feishu_setup import feishu_register_app_available, run_feishu_app_wizard
+    from gateway.assistant_registry import AssistantRegistry
+
+    if not feishu_register_app_available():
+        return SlashCommandOutcome(
+            handled=True,
+            reply=f"{MONITOR_PREFIX} · 需要 gateway 依赖：pip install 'evolux[gateway]'",
+        )
+    assistant_id = parts[1] if len(parts) >= 2 else ctx.assistant_id
+    mode = parts[2] if len(parts) >= 3 else "auto"
+    registry = AssistantRegistry(home=ctx.home)
+    registry.ensure_assistant(assistant_id)
+    _notify(ctx, f"{MONITOR_PREFIX} · 正在打开飞书创建链接，请在飞书 App 确认…")
+    try:
+        result = run_feishu_app_wizard(
+            registry,
+            assistant_id=assistant_id,
+            mode=mode,
+            open_browser=True,
+        )
+    except KeyboardInterrupt:
+        return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 已取消飞书集成。")
+    except Exception as exc:
+        return SlashCommandOutcome(handled=True, reply=f"{MONITOR_PREFIX} · 飞书集成失败：{exc}")
+    message = (
+        f"{MONITOR_PREFIX} · 飞书已绑定 assistant `{result.assistant_id}`\n"
+        f"app_id: {result.app_id}\n"
+        f"mode: {result.mode}"
+    )
+    if result.mode == "shared_hermes":
+        message += "\n保持 Hermes gateway 运行即可在飞书对话。"
+    else:
+        message += "\n运行 `evolux gateway run` 启动 Evolux 飞书长连接。"
+    return SlashCommandOutcome(handled=True, reply=message)
+
+
 _HANDLERS = {
     "help": _cmd_help,
     "commands": _cmd_commands,
@@ -658,4 +712,5 @@ _HANDLERS = {
     "goal": _cmd_goal,
     "mcp": _cmd_mcp,
     "cron": _cmd_cron,
+    "feishu": _cmd_feishu,
 }

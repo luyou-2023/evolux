@@ -154,3 +154,35 @@ def test_slash_model_and_tools(evolux_home):
     tools = try_handle_slash_command("/tools", ctx=ctx)
     assert model and "deepseek" in (model.reply or "")
     assert tools and "可用工具" in (tools.reply or "")
+
+
+def test_slash_feishu_setup(evolux_home, monkeypatch):
+    db = SessionDB(home=evolux_home)
+    monkeypatch.setattr("cli.feishu_setup.feishu_register_app_available", lambda: True)
+    monkeypatch.setattr(
+        "cli.feishu_setup.run_feishu_app_wizard",
+        lambda registry, **kwargs: type(
+            "R",
+            (),
+            {
+                "assistant_id": kwargs["assistant_id"],
+                "app_id": "cli_test",
+                "app_secret": "sec",
+                "mode": "shared_hermes",
+                "user_open_id": None,
+            },
+        )(),
+    )
+    outcome = try_handle_slash_command(
+        "/feishu setup default shared_hermes",
+        ctx=SlashCommandContext(
+            session_key="orchestrator:default:cli:dm:local",
+            assistant_id="default",
+            platform="cli",
+            session_db=db,
+            home=evolux_home,
+        ),
+    )
+    assert outcome and outcome.handled
+    assert "cli_test" in (outcome.reply or "")
+    assert "shared_hermes" in (outcome.reply or "")

@@ -5,8 +5,16 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any, Protocol
+
+
+def _open_sqlite(path: Path) -> sqlite3.Connection:
+    """Shared SQLite connection safe for orchestrator parallel tool threads."""
+    conn = sqlite3.connect(str(path), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 class VectorStore(Protocol):
@@ -112,31 +120,35 @@ class SqliteVectorStore:
     def __init__(self, path: Path):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path))
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS vectors (
-                item_id TEXT PRIMARY KEY,
-                vector TEXT NOT NULL,
-                metadata TEXT NOT NULL
+        self._lock = threading.Lock()
+        self._conn = _open_sqlite(self.path)
+        with self._lock:
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vectors (
+                    item_id TEXT PRIMARY KEY,
+                    vector TEXT NOT NULL,
+                    metadata TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        self._conn.commit()
+            self._conn.commit()
 
     def upsert(self, item_id: str, vector: list[float], metadata: dict[str, Any]) -> None:
-        self._conn.execute(
-            """
-            INSERT INTO vectors (item_id, vector, metadata) VALUES (?, ?, ?)
-            ON CONFLICT(item_id) DO UPDATE SET vector=excluded.vector, metadata=excluded.metadata
-            """,
-            (item_id, json.dumps(vector), json.dumps(metadata)),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO vectors (item_id, vector, metadata) VALUES (?, ?, ?)
+                ON CONFLICT(item_id) DO UPDATE SET vector=excluded.vector, metadata=excluded.metadata
+                """,
+                (item_id, json.dumps(vector), json.dumps(metadata)),
+            )
+            self._conn.commit()
 
     def delete(self, item_id: str) -> None:
-        self._conn.execute("DELETE FROM vectors WHERE item_id = ?", (item_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM vectors WHERE item_id = ?", (item_id,))
+            self._conn.commit()
 
     def search(
         self,
@@ -145,10 +157,12 @@ class SqliteVectorStore:
         top_k: int = 5,
         metadata_filter: dict[str, Any] | None = None,
     ) -> list[tuple[str, float, dict[str, Any]]]:
+        with self._lock:
+            rows = list(
+                self._conn.execute("SELECT item_id, vector, metadata FROM vectors")
+            )
         results: list[tuple[str, float, dict[str, Any]]] = []
-        for item_id, vector_raw, metadata_raw in self._conn.execute(
-            "SELECT item_id, vector, metadata FROM vectors"
-        ):
+        for item_id, vector_raw, metadata_raw in rows:
             metadata = json.loads(metadata_raw)
             if metadata_filter and not _match_filter(metadata, metadata_filter):
                 continue
@@ -194,18 +208,20 @@ class SqliteVecStore:
         self.path = path
         self.dimensions = dimensions
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.path))
-        _load_sqlite_vec(self._conn)
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS vectors (
-                item_id TEXT PRIMARY KEY,
-                vector BLOB NOT NULL,
-                metadata TEXT NOT NULL
+        self._lock = threading.Lock()
+        self._conn = _open_sqlite(self.path)
+        with self._lock:
+            _load_sqlite_vec(self._conn)
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS vectors (
+                    item_id TEXT PRIMARY KEY,
+                    vector BLOB NOT NULL,
+                    metadata TEXT NOT NULL
+                )
+                """
             )
-            """
-        )
-        self._conn.commit()
+            self._conn.commit()
 
     def _fit_vector(self, vector: list[float]) -> list[float]:
         if len(vector) == self.dimensions:
@@ -218,18 +234,20 @@ class SqliteVecStore:
         from sqlite_vec import serialize_float32
 
         blob = serialize_float32(self._fit_vector(vector))
-        self._conn.execute(
-            """
-            INSERT INTO vectors (item_id, vector, metadata) VALUES (?, ?, ?)
-            ON CONFLICT(item_id) DO UPDATE SET vector=excluded.vector, metadata=excluded.metadata
-            """,
-            (item_id, blob, json.dumps(metadata)),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """
+                INSERT INTO vectors (item_id, vector, metadata) VALUES (?, ?, ?)
+                ON CONFLICT(item_id) DO UPDATE SET vector=excluded.vector, metadata=excluded.metadata
+                """,
+                (item_id, blob, json.dumps(metadata)),
+            )
+            self._conn.commit()
 
     def delete(self, item_id: str) -> None:
-        self._conn.execute("DELETE FROM vectors WHERE item_id = ?", (item_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM vectors WHERE item_id = ?", (item_id,))
+            self._conn.commit()
 
     def search(
         self,
@@ -241,11 +259,15 @@ class SqliteVecStore:
         from sqlite_vec import serialize_float32
 
         query_blob = serialize_float32(self._fit_vector(query_vector))
+        with self._lock:
+            rows = list(
+                self._conn.execute(
+                    "SELECT item_id, vec_distance_cosine(?, vector) AS dist, metadata FROM vectors",
+                    (query_blob,),
+                )
+            )
         results: list[tuple[str, float, dict[str, Any]]] = []
-        for item_id, distance, metadata_raw in self._conn.execute(
-            "SELECT item_id, vec_distance_cosine(?, vector) AS dist, metadata FROM vectors",
-            (query_blob,),
-        ):
+        for item_id, distance, metadata_raw in rows:
             metadata = json.loads(metadata_raw)
             if metadata_filter and not _match_filter(metadata, metadata_filter):
                 continue

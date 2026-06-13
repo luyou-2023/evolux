@@ -4,6 +4,16 @@ A self-evolving multi-agent runtime: orchestrator coordinates domain expert sub-
 
 ## Quick start
 
+### curl install (Hermes-style)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/luyou-2023/evolux/main/scripts/install.sh | bash
+```
+
+Auto-detects Hermes (`~/.hermes` / profiles / `$HERMES_HOME`) and imports user sediment into Evolux.
+
+### Dev install
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,gateway]"
@@ -11,6 +21,8 @@ pip install -e ".[dev,gateway]"
 evolux setup
 # put DEEPSEEK_API_KEY in ~/.evolux/.env
 
+evolux migrate detect
+evolux migrate from-hermes --dry-run
 evolux skills install git       # install bundled skill
 evolux skills reindex           # rebuild skill vector index
 evolux cron list                # show scheduled jobs
@@ -54,6 +66,11 @@ Client (CLI / Feishu / …)
 | Command | Description |
 |---------|-------------|
 | `evolux setup` | Init `~/.evolux` config and dirs |
+| `evolux setup --from-hermes` | Setup + auto-import Hermes sediment |
+| `evolux migrate detect` | List local Hermes installs/profiles |
+| `evolux migrate from-hermes` | Import Hermes memories/skills/cron/config |
+| `evolux uninstall` | Remove wrapper/code; keep or wipe `~/.evolux` |
+| `evolux -p <profile>` | Use profile under `~/.evolux/profiles/<name>` |
 | `evolux chat` | Interactive orchestrator session |
 | `evolux skills list/install/reindex` | Manage Skill definitions |
 | `evolux cron list/start` | Scheduled orchestrator jobs |

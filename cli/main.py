@@ -12,17 +12,38 @@ from cli.completion import run_completion
 from cli.cron_cmd import add_cron_parser, run_cron
 from cli.dashboard_cmd import run_dashboard_start
 from cli.gateway_cmd import run_gateway_start
+from cli.migrate_cmd import add_migrate_parser, run_migrate
 from cli.setup import run_setup
 from cli.skills_cmd import add_skills_parser, run_skills
 from cli.tui import run_tui
+from cli.uninstall_cmd import add_uninstall_parser, run_uninstall
+from evolux_constants import apply_profile
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="evolux", description="Evolux multi-agent runtime")
+    parser.add_argument(
+        "-p",
+        "--profile",
+        help="Use isolated profile under ~/.evolux/profiles/<name> (Hermes-compatible)",
+    )
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("version", help="Show version")
-    sub.add_parser("setup", help="Initialize ~/.evolux config and directories")
+    setup = sub.add_parser("setup", help="Initialize ~/.evolux config and directories")
+    setup.add_argument(
+        "--from-hermes",
+        action="store_true",
+        help="Auto-import Hermes sediment when detected",
+    )
+    setup.add_argument("--skip-hermes", action="store_true", help="Do not offer Hermes migration")
+    setup.add_argument(
+        "--preset",
+        choices=["user-data", "full"],
+        default="user-data",
+        help="Hermes migration preset when importing",
+    )
+    setup.add_argument("--yes", action="store_true", help="Skip Hermes migration prompt")
 
     chat = sub.add_parser("chat", help="Interactive orchestrator chat")
     chat.add_argument("--assistant", default="default", help="Assistant id")
@@ -52,6 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard_start.add_argument("--check", action="store_true", help="Validate config and exit")
 
     add_assistant_parser(sub)
+    add_migrate_parser(sub)
+    add_uninstall_parser(sub)
 
     gateway = sub.add_parser("gateway", help="Gateway commands")
     gateway_sub = gateway.add_subparsers(dest="gateway_command")
@@ -62,15 +85,34 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(argv if argv is not None else sys.argv[1:])
+    profile = None
+    cleaned: list[str] = []
+    idx = 0
+    while idx < len(raw_argv):
+        token = raw_argv[idx]
+        if token in {"-p", "--profile"} and idx + 1 < len(raw_argv):
+            profile = raw_argv[idx + 1]
+            idx += 2
+            continue
+        cleaned.append(token)
+        idx += 1
+    apply_profile(profile)
+
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(cleaned)
 
     if args.command == "version":
         print("evolux 0.4.0")
         return 0
 
     if args.command == "setup":
-        return run_setup()
+        return run_setup(
+            from_hermes=bool(getattr(args, "from_hermes", False)),
+            skip_hermes=bool(getattr(args, "skip_hermes", False)),
+            hermes_preset=str(getattr(args, "preset", "user-data")),
+            yes=bool(getattr(args, "yes", False)),
+        )
 
     if args.command == "chat":
         trace = bool(getattr(args, "trace", False))
@@ -125,6 +167,15 @@ def main(argv: list[str] | None = None) -> int:
             return run_gateway_start(foreground=True)
         parser.parse_args(["gateway", "--help"])
         return 0
+
+    if args.command == "migrate":
+        if not args.migrate_command:
+            parser.parse_args(["migrate", "--help"])
+            return 0
+        return run_migrate(args)
+
+    if args.command == "uninstall":
+        return run_uninstall(args)
 
     parser.print_help()
     return 0

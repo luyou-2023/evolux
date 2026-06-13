@@ -56,11 +56,22 @@ assistants:
 """
 
 
-def run_setup(home: Path | None = None) -> int:
+def run_setup(
+    home: Path | None = None,
+    *,
+    from_hermes: bool = False,
+    skip_hermes: bool = False,
+    hermes_preset: str = "user-data",
+    yes: bool = False,
+) -> int:
     base = home or get_evolux_home()
     base.mkdir(parents=True, exist_ok=True)
-    for sub in ("skills", "memories", "agents", "vector", "logs", "state"):
+    for sub in ("skills", "memories", "agents", "vector", "logs", "state", "cron", "migration"):
         (base / sub).mkdir(parents=True, exist_ok=True)
+
+    registry = base / "agents" / "registry.json"
+    if not registry.exists():
+        registry.write_text('{"agents": []}\n', encoding="utf-8")
 
     _seed_bundled_skills(base)
 
@@ -70,8 +81,52 @@ def run_setup(home: Path | None = None) -> int:
         print(f"Created {config_path}")
     else:
         print(f"Config already exists: {config_path}")
+
+    if not skip_hermes:
+        _maybe_migrate_hermes(
+            base,
+            auto=from_hermes,
+            preset=hermes_preset,
+            yes=yes,
+        )
+
     print(f"EVOLUX_HOME={base}")
+    print("Put API keys in ~/.evolux/.env (DEEPSEEK_API_KEY, OPENAI_API_KEY, …)")
     return 0
+
+
+def _maybe_migrate_hermes(
+    target: Path,
+    *,
+    auto: bool,
+    preset: str,
+    yes: bool,
+) -> None:
+    from cli.hermes_detect import discover_hermes_installs, format_detect_report, pick_default_source
+    from cli.hermes_migration import migrate_from_hermes
+
+    report = discover_hermes_installs()
+    if not report.found:
+        return
+
+    print(format_detect_report(report))
+    source = pick_default_source(report)
+    if source is None:
+        return
+
+    if not auto and not yes:
+        try:
+            answer = input(f"Import Hermes sediment from {source}? [Y/n]: ").strip().lower()
+        except EOFError:
+            return
+        if answer in {"n", "no"}:
+            print("Skipped Hermes migration.")
+            return
+
+    result = migrate_from_hermes(source, target, preset=preset, dry_run=False)
+    for line in result.summary_lines():
+        print(line)
+    print("Run: evolux skills reindex")
 
 
 def _seed_bundled_skills(home: Path) -> None:

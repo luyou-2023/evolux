@@ -34,6 +34,9 @@ llm:
 gateway:
   host: 0.0.0.0
   port: 8787
+  feishu_webhook_host: 127.0.0.1
+  feishu_webhook_port: 8765
+  hermes_compat: true
 
 mcp_servers: {}
 

@@ -129,7 +129,7 @@ def _run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def validate_gateway_ready(home: Path) -> int:
-    from gateway.platforms.feishu import feishu_connection_mode
+    from gateway.platforms.feishu import feishu_connection_mode, feishu_skips_evolux_transport
     from gateway.platforms.feishu_ws import FEISHU_WS_AVAILABLE
     from gateway.webhook_server import AIOHTTP_AVAILABLE
     from gateway.assistant_registry import AssistantRegistry
@@ -148,7 +148,9 @@ def validate_gateway_ready(home: Path) -> int:
         return 1
 
     needs_websocket = any(
-        feishu_connection_mode(item.platforms["feishu"]) == "websocket" for item in feishu_assistants
+        feishu_connection_mode(item.platforms["feishu"]) == "websocket"
+        and not feishu_skips_evolux_transport(item.platforms["feishu"])
+        for item in feishu_assistants
     )
     if needs_websocket and not FEISHU_WS_AVAILABLE:
         print("Feishu WebSocket mode requires lark-oapi and websockets.")

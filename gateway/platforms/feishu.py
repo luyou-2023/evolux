@@ -24,9 +24,16 @@ class FeishuConfig:
 def feishu_connection_mode(platform_config: dict[str, Any]) -> str:
     """Return feishu transport mode (websocket default, Hermes-aligned)."""
     mode = str(platform_config.get("mode") or "websocket").lower()
+    if mode in {"shared_hermes", "hermes", "shared"}:
+        return "shared_hermes"
     if mode not in {"websocket", "webhook"}:
         return "websocket"
     return mode
+
+
+def feishu_skips_evolux_transport(platform_config: dict[str, Any]) -> bool:
+    """True when Feishu is handled by a running Hermes gateway instead of Evolux."""
+    return feishu_connection_mode(platform_config) == "shared_hermes"
 
 
 def parse_feishu_webhook(payload: dict[str, Any], *, assistant_id: str) -> MessageEvent | dict[str, Any] | None:

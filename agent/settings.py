@@ -40,6 +40,9 @@ class LLMSettings:
 class GatewaySettings:
     host: str = "0.0.0.0"
     port: int = 8787
+    feishu_webhook_host: str = "127.0.0.1"
+    feishu_webhook_port: int | None = 8765
+    hermes_compat: bool = True
 
 
 @dataclass
@@ -163,9 +166,22 @@ def load_settings(home: Path | None = None) -> Settings:
     )
 
     gateway = raw.get("gateway", {})
+    feishu_webhook_port = gateway.get("feishu_webhook_port", settings.gateway.feishu_webhook_port)
+    if feishu_webhook_port in (None, "", "null"):
+        parsed_feishu_port = None
+    else:
+        try:
+            parsed_feishu_port = int(feishu_webhook_port)
+        except (TypeError, ValueError):
+            parsed_feishu_port = settings.gateway.feishu_webhook_port
     settings.gateway = GatewaySettings(
         host=str(gateway.get("host", settings.gateway.host)),
         port=int(gateway.get("port", settings.gateway.port)),
+        feishu_webhook_host=str(
+            gateway.get("feishu_webhook_host", settings.gateway.feishu_webhook_host)
+        ),
+        feishu_webhook_port=parsed_feishu_port,
+        hermes_compat=bool(gateway.get("hermes_compat", settings.gateway.hermes_compat)),
     )
 
     mcp = raw.get("mcp_servers", {})

@@ -7,7 +7,13 @@ import logging
 from typing import Any
 
 from gateway.assistant_registry import AssistantRegistry
-from gateway.platforms.feishu import feishu_connection_mode, parse_feishu_card_action_sdk, parse_feishu_im_receive_sdk
+from gateway.platforms.feishu import (
+    feishu_connection_mode,
+    feishu_skips_evolux_transport,
+    parse_feishu_card_action_sdk,
+    parse_feishu_im_receive_sdk,
+)
+from gateway.platforms.feishu_hermes import hermes_feishu_app_lock_held
 from gateway.platforms.feishu_format import build_clarify_selected_card
 
 logger = logging.getLogger("evolux.gateway.feishu_ws")
@@ -207,12 +213,30 @@ class FeishuWebSocketManager:
             feishu = item.platforms.get("feishu") or {}
             if feishu_connection_mode(feishu) != "websocket":
                 continue
+            if feishu_skips_evolux_transport(feishu):
+                logger.info(
+                    "Feishu WebSocket skipped assistant=%s (mode=shared_hermes; Hermes owns transport)",
+                    item.assistant_id,
+                )
+                continue
             app_id = str(feishu.get("app_id") or "")
             app_secret = str(feishu.get("app_secret") or "")
             if not app_id or not app_secret:
                 logger.warning(
                     "Skipping Feishu WebSocket assistant=%s: missing app_id/app_secret",
                     item.assistant_id,
+                )
+                continue
+            held, lock = hermes_feishu_app_lock_held(app_id)
+            if held:
+                owner_pid = lock.get("pid") if isinstance(lock, dict) else None
+                logger.warning(
+                    "Feishu WebSocket skipped assistant=%s app_id=%s "
+                    "(Hermes gateway holds app lock%s). "
+                    "Use --mode shared_hermes or stop Hermes gateway.",
+                    item.assistant_id,
+                    app_id,
+                    f" PID {owner_pid}" if owner_pid else "",
                 )
                 continue
             client = FeishuWebSocketClient(

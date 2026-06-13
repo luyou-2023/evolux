@@ -228,12 +228,18 @@ def _map_hermes_llm(hermes_cfg: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def _upgrade_feishu_assistants_to_websocket(cfg: dict[str, Any]) -> list[str]:
-    """Hermes defaults to websocket; Evolux matches that for no-public-IP setups."""
-    upgraded: list[str] = []
+def _upgrade_feishu_assistants_for_coexistence(
+    cfg: dict[str, Any],
+    *,
+    source: Path,
+    hermes_gateway_active: bool,
+) -> list[str]:
+    """Pick websocket, or shared_hermes when Hermes gateway still owns Feishu."""
+    changed: list[str] = []
     assistants = cfg.get("assistants")
     if not isinstance(assistants, dict):
-        return upgraded
+        return changed
+    target_mode = "shared_hermes" if hermes_gateway_active else "websocket"
     for assistant_id, assistant_cfg in assistants.items():
         if not isinstance(assistant_cfg, dict):
             continue
@@ -243,11 +249,52 @@ def _upgrade_feishu_assistants_to_websocket(cfg: dict[str, Any]) -> list[str]:
         feishu = platforms.get("feishu")
         if not isinstance(feishu, dict):
             continue
-        mode = str(feishu.get("mode") or "webhook").lower()
-        if mode != "websocket":
-            feishu["mode"] = "websocket"
-            upgraded.append(str(assistant_id))
-    return upgraded
+        current = str(feishu.get("mode") or "webhook").lower()
+        if current != target_mode:
+            feishu["mode"] = target_mode
+            changed.append(f"{assistant_id}:{target_mode}")
+    return changed
+
+
+def _apply_hermes_gateway_compat_settings(cfg: dict[str, Any], *, source: Path) -> list[str]:
+    """Avoid port clashes with Hermes (8787 dashboard, 8765 Feishu webhook)."""
+    from gateway.platforms.feishu_hermes import (
+        EVOLUX_FALLBACK_GATEWAY_PORT,
+        HERMES_DEFAULT_FEISHU_WEBHOOK_PORT,
+        read_hermes_gateway_port,
+    )
+
+    merged: list[str] = []
+    gateway = cfg.setdefault("gateway", {})
+    if not isinstance(gateway, dict):
+        return merged
+
+    hermes_port = read_hermes_gateway_port(source) or gateway.get("port")
+    evolux_port = gateway.get("port")
+    try:
+        evolux_port_int = int(evolux_port) if evolux_port is not None else None
+    except (TypeError, ValueError):
+        evolux_port_int = None
+    try:
+        hermes_port_int = int(hermes_port) if hermes_port is not None else None
+    except (TypeError, ValueError):
+        hermes_port_int = None
+
+    if evolux_port_int is None or (
+        hermes_port_int is not None and evolux_port_int == hermes_port_int
+    ):
+        gateway["port"] = EVOLUX_FALLBACK_GATEWAY_PORT
+        merged.append("gateway.port")
+
+    if gateway.get("feishu_webhook_port") in (None, ""):
+        gateway["feishu_webhook_port"] = HERMES_DEFAULT_FEISHU_WEBHOOK_PORT
+        merged.append("gateway.feishu_webhook_port")
+
+    if "hermes_compat" not in gateway:
+        gateway["hermes_compat"] = True
+        merged.append("gateway.hermes_compat")
+
+    return merged
 
 
 def _merge_config(source: Path, target: Path, *, dry_run: bool) -> list[str]:
@@ -303,11 +350,19 @@ def _merge_config(source: Path, target: Path, *, dry_run: bool) -> list[str]:
                     dst_assistants[assistant_id] = cfg
             merged_keys.append("assistants")
 
-    upgraded = _upgrade_feishu_assistants_to_websocket(dst_cfg)
+    compat = _apply_hermes_gateway_compat_settings(dst_cfg, source=source)
+    if compat:
+        merged_keys.extend(compat)
+
+    from gateway.platforms.feishu_hermes import hermes_gateway_running
+
+    upgraded = _upgrade_feishu_assistants_for_coexistence(
+        dst_cfg,
+        source=source,
+        hermes_gateway_active=hermes_gateway_running(source),
+    )
     if upgraded:
-        merged_keys.append("feishu.websocket")
-        if not dry_run:
-            pass  # dst_cfg already mutated in place
+        merged_keys.append("feishu.coexistence")
 
     if merged_keys and not dry_run:
         _write_yaml(dst_path, dst_cfg)

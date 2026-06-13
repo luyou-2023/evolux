@@ -19,6 +19,7 @@ def test_feishu_connection_mode_defaults_to_websocket():
     assert feishu_connection_mode({}) == "websocket"
     assert feishu_connection_mode({"mode": "webhook"}) == "webhook"
     assert feishu_connection_mode({"mode": "websocket"}) == "websocket"
+    assert feishu_connection_mode({"mode": "shared_hermes"}) == "shared_hermes"
     assert feishu_connection_mode({"mode": "invalid"}) == "websocket"
 
 
@@ -68,6 +69,34 @@ def test_parse_feishu_card_action_sdk():
 
 
 @pytest.mark.asyncio
+async def test_ws_manager_skips_shared_hermes(evolux_home, monkeypatch):
+    registry = AssistantRegistry(home=evolux_home)
+    registry.bind_platform(
+        "hermes-bot",
+        "feishu",
+        {"app_id": "app_shared", "app_secret": "secret", "mode": "shared_hermes"},
+    )
+
+    started: list[str] = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            started.append(kwargs["assistant_id"])
+
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
+
+    monkeypatch.setattr("gateway.platforms.feishu_ws.FeishuWebSocketClient", FakeClient)
+    manager = FeishuWebSocketManager(runner=object())
+    await manager.start_for_registry(registry)
+    assert started == []
+    await manager.stop()
+
+
+@pytest.mark.asyncio
 async def test_ws_manager_starts_only_websocket_assistants(evolux_home, monkeypatch):
     registry = AssistantRegistry(home=evolux_home)
     registry.bind_platform(
@@ -94,6 +123,7 @@ async def test_ws_manager_starts_only_websocket_assistants(evolux_home, monkeypa
             pass
 
     monkeypatch.setattr("gateway.platforms.feishu_ws.FeishuWebSocketClient", FakeClient)
+    monkeypatch.setattr("gateway.platforms.feishu_ws.hermes_feishu_app_lock_held", lambda app_id: (False, None))
     manager = FeishuWebSocketManager(runner=object())
     await manager.start_for_registry(registry)
     assert started == ["ws-bot"]

@@ -19,7 +19,12 @@ from cli.gateway_service import (
 )
 from evolux_logging import setup_logging
 from gateway.assistant_registry import AssistantRegistry
-from gateway.platforms.feishu import feishu_connection_mode
+from gateway.platforms.feishu import feishu_connection_mode, feishu_skips_evolux_transport
+from gateway.platforms.feishu_hermes import (
+    HERMES_DEFAULT_FEISHU_WEBHOOK_PATH,
+    HERMES_DEFAULT_FEISHU_WEBHOOK_PORT,
+    suggest_evolux_gateway_port,
+)
 from gateway.run import GatewayRunner
 from gateway.webhook_server import run_webhook_server
 
@@ -69,17 +74,34 @@ def run_gateway_foreground(home: Path | None = None, *, check_only: bool = False
 
     host = settings.gateway.host
     port = settings.gateway.port
+    suggested = suggest_evolux_gateway_port(port)
+    if suggested != port:
+        print(
+            f"Note: port {port} may conflict with Hermes; "
+            f"consider gateway.port: {suggested} in config.yaml"
+        )
     print(f"Starting Evolux gateway on http://{host}:{port}")
     print(f"Dashboard: http://{host}:{port}/dashboard")
     print(f"Cron ticker: every {settings.cron.tick_seconds}s")
+    feishu_webhook_port = settings.gateway.feishu_webhook_port
     for item in feishu_assistants:
         cfg = item.platforms["feishu"]
         mode = feishu_connection_mode(cfg)
-        if mode == "websocket":
+        if feishu_skips_evolux_transport(cfg):
+            print(f"- {item.assistant_id}: Feishu via Hermes gateway (mode=shared_hermes)")
+        elif mode == "websocket":
             print(f"- {item.assistant_id}: WebSocket long connection (no public URL required)")
         else:
-            webhook = f"http://{host}:{port}/webhook/feishu/{item.assistant_id}"
-            print(f"- {item.assistant_id}: {webhook} (mode=webhook)")
+            if feishu_webhook_port and feishu_webhook_port != port:
+                base = f"http://{settings.gateway.feishu_webhook_host}:{feishu_webhook_port}"
+                print(
+                    f"- {item.assistant_id}: {base}{HERMES_DEFAULT_FEISHU_WEBHOOK_PATH} "
+                    f"(Hermes-compatible webhook port)"
+                )
+                print(f"  alt: http://{host}:{port}/webhook/feishu/{item.assistant_id}")
+            else:
+                webhook = f"http://{host}:{port}/webhook/feishu/{item.assistant_id}"
+                print(f"- {item.assistant_id}: {webhook} (mode=webhook)")
 
     async def _main() -> None:
         await run_webhook_server(
@@ -88,6 +110,10 @@ def run_gateway_foreground(home: Path | None = None, *, check_only: bool = False
             port=port,
             home=base,
             get_secret=lambda aid: _feishu_secret_for(registry, aid),
+            registry=registry,
+            feishu_webhook_host=settings.gateway.feishu_webhook_host,
+            feishu_webhook_port=settings.gateway.feishu_webhook_port,
+            hermes_compat=settings.gateway.hermes_compat,
         )
 
     try:

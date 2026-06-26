@@ -12,10 +12,13 @@ ENTRY_DELIMITER = "\n§\n"
 DOMAIN_TOOLSETS: dict[str, list[str]] = {
     "code": ["evolux-code"],
     "feishu": ["evolux-feishu"],
+    "ui-test": ["evolux-ui-test"],
     "writing": ["evolux-code"],
     "research": ["evolux-code"],
     "general": ["evolux-code"],
 }
+
+UI_TEST_MCP_NAME_HINTS = ("midscene",)
 
 # MCP server name substrings that indicate code/opencode capability in config.yaml
 CODE_MCP_NAME_HINTS = ("opencode", "devtools", "code", "cdp")
@@ -30,7 +33,12 @@ def default_mcp_servers_for_domain(
     mcp_servers: dict[str, Any] | None = None,
 ) -> list[str]:
     """Pick enabled MCP servers from config for a domain (code → opencode/devtools-like names)."""
-    if (domain or "").lower() != "code" or not mcp_servers:
+    if not mcp_servers:
+        return []
+    domain_lower = (domain or "").lower()
+    if domain_lower == "ui-test":
+        return []
+    if domain_lower != "code":
         return []
     selected: list[str] = []
     for name, cfg in mcp_servers.items():
@@ -71,6 +79,11 @@ def build_dispatch_context_slice(
     cap += f"\n绑定 MCP: {', '.join(mcp_servers) if mcp_servers else '无'}"
     if (domain or "").lower() == "code":
         cap += f"\n\n{_code_execution_instructions(mcp_servers)}"
+    elif (domain or "").lower() == "ui-test":
+        cap += (
+            "\n\nUI 测试必须使用 midscene_luke_run 或 midscene_luke_run_playwright_test；"
+            "禁止 terminal 模拟浏览器操作。"
+        )
     parts.append(cap)
     return "\n\n".join(parts)
 
@@ -90,6 +103,11 @@ def build_default_system_prompt(
     extra = ""
     if (domain or "").lower() == "code":
         extra = f"\n\n{_code_execution_instructions(mcp_servers)}"
+    elif (domain or "").lower() == "ui-test":
+        extra = (
+            "\n\nUI 测试任务必须使用 midscene_luke_run 或 midscene_luke_run_playwright_test，"
+            "禁止用 terminal/curl 模拟点击。摘要须含步骤结果与断言结论。"
+        )
     return (
         f"你是 {name}，{domain} 领域专家。\n"
         f"{description.strip() or '专注执行主控委派的具体任务。'}\n\n"

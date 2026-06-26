@@ -14,6 +14,7 @@ from cli.dashboard_cmd import run_dashboard_start
 from cli.feishu_cmd import add_feishu_parser, run_feishu
 from cli.gateway_cmd import add_gateway_parser, run_gateway
 from cli.migrate_cmd import add_migrate_parser, run_migrate
+from cli.midscene_cmd import add_expert_parser, add_midscene_parser, run_expert, run_midscene
 from cli.setup import run_setup
 from cli.skills_cmd import add_skills_parser, run_skills
 from cli.tui import run_tui
@@ -78,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_migrate_parser(sub)
     add_uninstall_parser(sub)
     add_gateway_parser(sub)
+    add_expert_parser(sub)
+    add_midscene_parser(sub)
 
     return parser
 
@@ -178,6 +181,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "uninstall":
         return run_uninstall(args)
+
+    if args.command == "expert":
+        if not args.expert_command:
+            parser.parse_args(["expert", "--help"])
+            return 0
+        return run_expert(args)
+
+    if args.command == "midscene":
+        if not args.midscene_command:
+            parser.parse_args(["midscene", "--help"])
+            return 0
+        return run_midscene(args)
 
     parser.print_help()
     return 0

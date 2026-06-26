@@ -37,4 +37,8 @@ def build_orchestrator_system_prompt(*, max_concurrent_subagents: int = 3) -> st
 
 ## 追问与上下文（处理不丢）
 - 「谁写的 / 用什么工具 / 是否 opencode」等**追问**：先查本会话历史与 SOLUTIONS/上一轮协调记录，**主控直接汇总**，勿盲目 re-dispatch
-- 仅当需要**新的执行或验证**时才 dispatch；勿混淆 Hermes 与 Evolux 的委派记录"""
+- 仅当需要**新的执行或验证**时才 dispatch；勿混淆 Hermes 与 Evolux 的委派记录
+
+## UI 自动化测试（midscenejs_luke + Playwright）
+- Web/E2E/点击断言类任务 → dispatch **ui-automation-expert**（`evolux expert install ui-automation`）
+- 专家使用 midscene_luke_run / midscene_luke_run_playwright_test，非裸 terminal"""

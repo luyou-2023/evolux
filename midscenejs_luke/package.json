@@ -1,0 +1,25 @@
+{
+  "name": "midscenejs_luke",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Vision-driven UI automation SDK (Midscene-inspired reimplementation by Luke)",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./playwright": "./src/playwright/index.mjs"
+  },
+  "scripts": {
+    "runner": "node runner.mjs",
+    "test:smoke": "node runner.mjs '{\"url\":\"https://example.com\",\"steps\":[{\"type\":\"assert\",\"prompt\":\"page has a heading or title\"}]}'"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -7,3 +7,5 @@ __pycache__/
 .idea/
 .env
 **/.env
+node_modules/
+midscenejs_luke/node_modules/

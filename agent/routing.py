@@ -67,6 +67,27 @@ def looks_like_execution_task(text: str) -> bool:
     return False
 
 
+_UI_TEST_KEYWORDS = ("ui", "e2e", "playwright", "自动化测试", "界面测试", "midscene", "浏览器测试")
+
+
+def looks_like_ui_test_task(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(k in lower for k in _UI_TEST_KEYWORDS) or (
+        "点击" in lower and ("页面" in lower or "按钮" in lower or "断言" in lower)
+    )
+
+
+def ui_expert_boost(agent_id: str, domain: str, ui_task: bool) -> float:
+    if not ui_task:
+        return 0.0
+    boost = 0.0
+    if (domain or "").lower() == "ui-test":
+        boost += 0.5
+    if "ui-automation" in agent_id or "qa-" in agent_id:
+        boost += 0.35
+    return boost
+
+
 def routing_junk_penalty(agent_id: str) -> float:
     """Demote auto-created task-signature experts that pollute routing."""
     aid = agent_id or ""
@@ -112,6 +133,7 @@ def fuse_routing(
     w = weights or FusionWeights()
     fused: list[FusedCandidate] = []
     execution_task = looks_like_execution_task(user_message)
+    ui_task = looks_like_ui_test_task(user_message)
     mcp_map = agent_mcp or {}
     domain_map = agent_domains or {}
 
@@ -127,6 +149,11 @@ def fuse_routing(
                 has_mcp=mcp_map.get(agent.agent_id, False),
                 domain=domain_map.get(agent.agent_id, agent.domain),
                 execution_task=execution_task,
+            )
+            + ui_expert_boost(
+                agent.agent_id,
+                domain_map.get(agent.agent_id, agent.domain),
+                ui_task,
             )
         )
         final = max(0.0, final)
@@ -150,11 +177,11 @@ def fuse_routing(
         suggested_skills=suggested,
         user_message=user_message,
     )
-    ctx.prompt_block = format_routing_prompt(ctx, execution_task=execution_task)
+    ctx.prompt_block = format_routing_prompt(ctx, execution_task=execution_task, ui_task=ui_task)
     return ctx
 
 
-def format_routing_prompt(ctx: RoutingContext, *, execution_task: bool = False) -> str:
+def format_routing_prompt(ctx: RoutingContext, *, execution_task: bool = False, ui_task: bool = False) -> str:
     lines = [
         "## 路由预检（系统自动生成，供主控参考 — 由你决定是否委派）",
         "",
@@ -162,6 +189,15 @@ def format_routing_prompt(ctx: RoutingContext, *, execution_task: bool = False) 
         "执行/MCP/多步任务：必须 dispatch_subagent，禁止主控自行 terminal/write_file。",
         "",
     ]
+    if ui_task:
+        lines.extend(
+            [
+                "### ⚠️ 检测到 UI 自动化/测试任务",
+                "- **必须** dispatch `ui-automation-expert`（或 domain=ui-test 专家）",
+                "- 使用 midscenejs_luke + Playwright，勿主控直接回答",
+                "",
+            ]
+        )
     if execution_task:
         lines.extend(
             [

@@ -91,6 +91,21 @@ TOOLSETS: dict[str, dict[str, Any]] = {
         "tools": [],
         "includes": ["file", "skills", "memory", "session_search", "todo", "terminal", "web"],
     },
+    "midscene-luke": {
+        "description": "midscenejs_luke vision UI automation tools",
+        "tools": [
+            "midscene_luke_run",
+            "midscene_luke_init_project",
+            "midscene_luke_run_playwright_test",
+            "midscene_luke_status",
+        ],
+        "includes": [],
+    },
+    "evolux-ui-test": {
+        "description": "UI/E2E testing expert preset (midscenejs_luke + Playwright)",
+        "tools": [],
+        "includes": ["evolux-code", "midscene-luke"],
+    },
     "feishu": {
         "description": "Feishu messaging and document tools",
         "tools": ["feishu_message", "feishu_doc_read", "feishu_doc_create", "feishu_doc_append", "feishu_setup"],
